@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Libre_Baskerville, Poppins } from "next/font/google";
 import "./globals.css";
+import { PortalProvider } from "@/components/portal/portal-provider";
 
 const poppins = Poppins({
   variable: "--font-body",
@@ -31,7 +32,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       data-scroll-behavior="smooth"
     >
       <body className="min-h-screen bg-paper font-sans text-ink antialiased">
-        {children}
+        <PortalProvider>{children}</PortalProvider>
       </body>
     </html>
   );
