@@ -11,10 +11,15 @@ import {
 import {
   assertRole,
   assertValidMember,
+  canAccessPortal,
   createSeedData,
   generatePassword,
   hashPassword,
   normalizeDraft,
+  migratePortalData,
+  retiredMember,
+  readmittedMember,
+  todayDate,
   ownProfilePatch,
   uniqueUsername,
   updatedMember,
@@ -45,6 +50,8 @@ type PortalContextValue = {
     id: string,
     patch: Partial<MemberDraft> & { role?: Role },
   ) => void;
+  retireMember: (id: string) => void;
+  readmitMember: (id: string) => void;
   updateOwnProfile: (patch: Partial<MemberDraft>) => void;
   changePassword: (current: string, next: string) => Promise<void>;
   addMovement: (input: Omit<Movement, "id">) => void;
@@ -52,25 +59,7 @@ type PortalContextValue = {
 const PortalContext = createContext<PortalContextValue | null>(null);
 
 function parseData(raw: string): PortalData {
-  const value: unknown = JSON.parse(raw);
-  if (!value || typeof value !== "object")
-    throw new Error("Los datos locales no son válidos.");
-  const data = value as PortalData;
-  if (
-    data.version !== 1 ||
-    !Array.isArray(data.members) ||
-    !Array.isArray(data.movements) ||
-    !data.members.every(
-      (member) =>
-        typeof member.id === "string" &&
-        typeof member.username === "string" &&
-        typeof member.passwordHash === "string" &&
-        typeof member.fullName === "string",
-    )
-  ) {
-    throw new Error("Los datos locales no son compatibles con esta versión.");
-  }
-  return data;
+  return migratePortalData(JSON.parse(raw));
 }
 
 export function PortalProvider({ children }: { children: ReactNode }) {
@@ -89,13 +78,16 @@ export function PortalProvider({ children }: { children: ReactNode }) {
         const initial = stored ? parseData(stored) : await createSeedData();
         if (cancelled) return;
         // Persist before displaying success; storage failures leave the original state intact.
-        if (!stored) localStorage.setItem(DATA_KEY, JSON.stringify(initial));
+        const serialized = JSON.stringify(initial);
+        if (stored !== serialized) localStorage.setItem(DATA_KEY, serialized);
         const savedSession = sessionStorage.getItem(SESSION_KEY);
         const validSession = initial.members.some(
-          (member) => member.id === savedSession,
+          (member) => member.id === savedSession && canAccessPortal(member),
         )
           ? savedSession
           : null;
+        if (savedSession && !validSession)
+          sessionStorage.removeItem(SESSION_KEY);
         dataRef.current = initial;
         sessionRef.current = validSession;
         setData(initial);
@@ -116,6 +108,17 @@ export function PortalProvider({ children }: { children: ReactNode }) {
         const next = parseData(event.newValue);
         dataRef.current = next;
         setData(next);
+        if (
+          sessionRef.current &&
+          !next.members.some(
+            (member) =>
+              member.id === sessionRef.current && canAccessPortal(member),
+          )
+        ) {
+          sessionRef.current = null;
+          setSessionId(null);
+          sessionStorage.removeItem(SESSION_KEY);
+        }
       } catch {
         setError("No se pudo sincronizar el cambio realizado en otra pestaña.");
       }
@@ -133,12 +136,13 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     return dataRef.current;
   }
   function actor(): Member | null {
-    return (
+    const member =
       dataRef.current?.members.find(
-        (member) => member.id === sessionRef.current,
-      ) ?? null
-    );
+        (candidate) => candidate.id === sessionRef.current,
+      ) ?? null;
+    return member && canAccessPortal(member) ? member : null;
   }
+
   function commit(next: PortalData) {
     try {
       localStorage.setItem(DATA_KEY, JSON.stringify(next));
@@ -149,6 +153,22 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     }
     dataRef.current = next;
     setData(next);
+    if (
+      sessionRef.current &&
+      !next.members.some(
+        (member) => member.id === sessionRef.current && canAccessPortal(member),
+      )
+    ) {
+      sessionRef.current = null;
+      setSessionId(null);
+      try {
+        sessionStorage.removeItem(SESSION_KEY);
+      } catch {
+        setError(
+          "El acceso está suspendido, pero no se pudo limpiar la sesión guardada.",
+        );
+      }
+    }
   }
 
   async function login(username: string, password: string) {
@@ -160,6 +180,15 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     );
     if (!member || !(await verifyPassword(password, member.passwordHash)))
       throw new Error("El usuario o la contraseña no son correctos.");
+    const latest = currentData().members.find(
+      (candidate) => candidate.id === member.id,
+    );
+    if (!latest || latest.passwordHash !== member.passwordHash)
+      throw new Error("Las credenciales cambiaron. Vuelve a iniciar sesión.");
+    if (!canAccessPortal(latest))
+      throw new Error(
+        "Tu acceso está suspendido por retiro. Comunícate con Secretaría para registrar tu reingreso.",
+      );
     try {
       sessionStorage.setItem(SESSION_KEY, member.id);
     } catch {
@@ -198,6 +227,13 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       role: "estandar",
       username,
       passwordHash,
+      status: "vigente",
+      retiredAt: "",
+      rejoinedAt: draft.category === "reingresante" ? todayDate() : "",
+      membershipHistory:
+        draft.category === "reingresante"
+          ? [{ type: "reingreso", date: todayDate(), category: "reingresante" }]
+          : [],
     };
     commit({ ...current, members: [...current.members, member] });
     return { member, username, password };
@@ -210,6 +246,30 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     const member = current.members.find((candidate) => candidate.id === id);
     if (!member) throw new Error("No se encontró al hermano.");
     const next = updatedMember(actor(), member, patch, current.members);
+    commit({
+      ...current,
+      members: current.members.map((candidate) =>
+        candidate.id === id ? next : candidate,
+      ),
+    });
+  }
+  function retireMember(id: string) {
+    const current = currentData();
+    const member = current.members.find((candidate) => candidate.id === id);
+    if (!member) throw new Error("No se encontró al hermano.");
+    const next = retiredMember(actor(), member);
+    commit({
+      ...current,
+      members: current.members.map((candidate) =>
+        candidate.id === id ? next : candidate,
+      ),
+    });
+  }
+  function readmitMember(id: string) {
+    const current = currentData();
+    const member = current.members.find((candidate) => candidate.id === id);
+    if (!member) throw new Error("No se encontró al hermano.");
+    const next = readmittedMember(actor(), member);
     commit({
       ...current,
       members: current.members.map((candidate) =>
@@ -271,11 +331,15 @@ export function PortalProvider({ children }: { children: ReactNode }) {
         members: data?.members ?? [],
         movements: data?.movements ?? [],
         currentMember:
-          data?.members.find((member) => member.id === sessionId) ?? null,
+          data?.members.find(
+            (member) => member.id === sessionId && canAccessPortal(member),
+          ) ?? null,
         login,
         logout,
         createMember,
         updateMember,
+        retireMember,
+        readmitMember,
         updateOwnProfile,
         changePassword,
         addMovement,

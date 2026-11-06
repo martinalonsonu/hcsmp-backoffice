@@ -19,6 +19,10 @@ function member(role: Role = "estandar", patch: Partial<Member> = {}): Member {
     id: "one",
     username: "hermano",
     passwordHash: "demo",
+    status: "vigente",
+    retiredAt: "",
+    rejoinedAt: "",
+    membershipHistory: [],
     role,
     ...patch,
   };
@@ -211,4 +215,212 @@ test("usuario automático único y contraseña inicial verificable sin texto pla
   assert.notEqual(hash, password);
   assert.equal(await portal.verifyPassword(password, hash), true);
   assert.equal(await portal.verifyPassword(`${password}!`, hash), false);
+});
+
+test("reingresante adulto está a prueba y no requiere una nueva juramentación", () => {
+  assert.deepEqual(
+    portal.validateMember(draft({ category: "reingresante", swornAt: "" })),
+    {},
+  );
+  assert.equal(portal.isTrialCategory("reingresante"), true);
+  assert.equal(portal.isTrialCategory("activo"), false);
+  const minor = draft({
+    category: "reingresante",
+    birthDate: "2015-01-01",
+    joinedAt: "2025-01-01",
+  });
+  assert.ok(portal.validateMember(minor).category);
+  assert.throws(
+    () =>
+      portal.updatedMember(
+        member("secretaria"),
+        member(),
+        { category: "reingresante", role: "presidencia" },
+        [],
+      ),
+    /Estándar/,
+  );
+  const next = portal.updatedMember(
+    member("secretaria"),
+    member("tesoreria"),
+    { category: "reingresante" },
+    [],
+  );
+  assert.equal(next.role, "estandar");
+  assert.equal(next.rejoinedAt, portal.todayDate());
+});
+
+test("migración añade estado vigente sin perder fichas, credenciales ni movimientos", () => {
+  const oldMember = {
+    ...member(),
+    id: "legacy",
+    passwordHash: "hash-conservado",
+  } as Partial<Member>;
+  delete oldMember.status;
+  delete oldMember.retiredAt;
+  delete oldMember.rejoinedAt;
+  delete oldMember.membershipHistory;
+  const movement = {
+    id: "m",
+    date: "2026-01-01",
+    description: "Pago anterior",
+    type: "pago" as const,
+    amount: 42,
+    memberId: "legacy",
+  };
+  const migrated = portal.migratePortalData({
+    version: 1,
+    members: [oldMember],
+    movements: [movement],
+  });
+  assert.equal(migrated.members[0].status, "vigente");
+  assert.equal(migrated.members[0].passwordHash, "hash-conservado");
+  assert.equal(migrated.members[0].id, "legacy");
+  assert.equal(migrated.members[0].username, oldMember.username);
+  assert.deepEqual(migrated.members[0].membershipHistory, []);
+  assert.deepEqual(migrated.movements, [movement]);
+  assert.deepEqual(portal.migratePortalData(migrated), migrated);
+});
+
+test("retiro conserva la ficha y suspende acceso; reingreso conserva la cuenta y pasa a prueba", () => {
+  const original = member("tesoreria", {
+    id: "returning",
+    passwordHash: "hash-original",
+  });
+  const secretary = member("secretaria", { id: "secretary" });
+  const retired = portal.retiredMember(secretary, original, "2026-01-01");
+  assert.equal(retired.status, "retirado");
+  assert.equal(retired.category, original.category);
+  assert.equal(retired.role, original.role);
+  assert.equal(portal.canAccessPortal(retired), false);
+  assert.equal(portal.canAccessPortal(null), false);
+  assert.equal(retired.retiredAt, "2026-01-01");
+  const returning = portal.readmittedMember(secretary, retired, "2026-02-01");
+  assert.equal(returning.status, "vigente");
+  assert.equal(returning.category, "reingresante");
+  assert.equal(returning.role, "estandar");
+  assert.equal(portal.canAccessPortal(returning), true);
+  assert.equal(returning.rejoinedAt, "2026-02-01");
+  for (const key of [
+    "id",
+    "username",
+    "passwordHash",
+    "joinedAt",
+    "swornAt",
+  ] as const)
+    assert.equal(returning[key], original[key]);
+  assert.deepEqual(returning.membershipHistory, [
+    { type: "retiro", date: "2026-01-01", category: "activo" },
+    { type: "reingreso", date: "2026-02-01", category: "reingresante" },
+  ]);
+  assert.equal(original.status, "vigente");
+  assert.deepEqual(original.membershipHistory, []);
+});
+
+test("solo Secretaría puede retirar o reingresar y las transiciones no se repiten", () => {
+  const secretary = member("secretaria");
+  const active = member();
+  const retired = portal.retiredMember(secretary, active, "2026-01-01");
+  for (const role of ["estandar", "tesoreria", "presidencia"] as Role[]) {
+    assert.throws(() => portal.retiredMember(member(role), active), /permiso/);
+    assert.throws(
+      () => portal.readmittedMember(member(role), retired),
+      /permiso/,
+    );
+  }
+  assert.throws(
+    () => portal.retiredMember(secretary, retired),
+    /ya está retirado/,
+  );
+  assert.throws(() => portal.readmittedMember(secretary, active), /retirado/);
+  assert.throws(
+    () => portal.readmittedMember(secretary, retired, "2025-12-31"),
+    /posterior al retiro/,
+  );
+  assert.throws(
+    () => portal.retiredMember(secretary, active, "2999-01-01"),
+    /fecha/,
+  );
+  assert.throws(
+    () =>
+      portal.assertRole({ ...secretary, status: "retirado" }, ["secretaria"]),
+    /permiso/,
+  );
+  assert.throws(
+    () => portal.ownProfilePatch(retired, { phone: "999999999" }, []),
+    /Inicia sesión/,
+  );
+});
+
+test("DNI de retirado orienta al reingreso en lugar de crear una ficha duplicada", () => {
+  const existing = member("estandar", { status: "retirado" });
+  assert.match(
+    portal.validateMember(draft({ category: "reingresante" }), [existing]).dni,
+    /listado de retirados/,
+  );
+});
+
+test("editar una ficha no permite cambiar su estado por un patch fuera del contrato", () => {
+  const original = member("estandar", {
+    status: "retirado",
+    retiredAt: "2026-01-01",
+    membershipHistory: [
+      { type: "retiro", date: "2026-01-01", category: "activo" },
+    ],
+  });
+  const patch = {
+    fullName: "Nombre corregido",
+    status: "vigente",
+    retiredAt: "",
+    membershipHistory: [],
+  } as Partial<MemberDraft>;
+  const next = portal.updatedMember(member("secretaria"), original, patch, []);
+  assert.equal(next.status, "retirado");
+  assert.equal(next.retiredAt, original.retiredAt);
+  assert.deepEqual(next.membershipHistory, original.membershipHistory);
+});
+
+test("reingreso de menor conserva su cuenta y apoderado como Postulante", () => {
+  const guardian = {
+    fullName: "Apoderado de prueba",
+    dni: "22222222",
+    age: "40",
+    education: "Superior",
+    address: "Huacho",
+    phone: "999999999",
+    relationship: "Madre",
+    sacraments: ["Bautizo"],
+  };
+  const minor = member("estandar", {
+    birthDate: "2015-01-01",
+    joinedAt: "2025-01-01",
+    swornAt: "",
+    category: "postulante",
+    guardian,
+  });
+  const secretary = member("secretaria");
+  const retired = portal.retiredMember(secretary, minor, "2026-01-01");
+  const returning = portal.readmittedMember(secretary, retired, "2026-02-01");
+  assert.equal(returning.status, "vigente");
+  assert.equal(returning.category, "postulante");
+  assert.equal(returning.role, "estandar");
+  assert.equal(portal.canAccessPortal(returning), true);
+  for (const key of [
+    "id",
+    "username",
+    "passwordHash",
+    "joinedAt",
+    "swornAt",
+  ] as const)
+    assert.equal(returning[key], minor[key]);
+  assert.deepEqual(returning.guardian, guardian);
+  assert.deepEqual(returning.membershipHistory.at(-1), {
+    type: "reingreso",
+    date: "2026-02-01",
+    category: "postulante",
+  });
+  assert.deepEqual(portal.validateMember(returning), {});
+  assert.ok(
+    portal.validateMember({ ...returning, category: "reingresante" }).category,
+  );
 });

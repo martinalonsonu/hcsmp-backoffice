@@ -17,13 +17,14 @@ import { ProfilePanel } from "@/components/portal/profile-panel";
 import { TreasuryPanel } from "@/components/portal/treasury-panel";
 import { usePortal } from "@/components/portal/portal-provider";
 import { Badge } from "@/components/ui/badge";
-import { categoryLabels, roleLabels } from "@/lib/portal";
+import { categoryLabels, roleLabels, isTrialCategory } from "@/lib/portal";
 
 function DashboardPage() {
   const searchParams = useSearchParams();
   const { currentMember, members, movements } = usePortal();
   const view = searchParams.get("view") ?? "summary";
   const role = currentMember?.role;
+  const rosterMembers = members.filter((member) => member.status === "vigente");
   const canSeeMembers = role === "secretaria" || role === "presidencia";
   const canSeeTreasury = role === "tesoreria" || role === "presidencia";
   const canSeeDebts = canSeeTreasury || role === "secretaria";
@@ -164,8 +165,8 @@ function DashboardPage() {
             {canSeeMembers ? (
               <StatCard
                 label="Hermanos en el padrón"
-                value={String(members.length)}
-                note={`${members.filter((member) => member.category === "postulante").length} postulantes registrados`}
+                value={String(rosterMembers.length)}
+                note={`${rosterMembers.filter((member) => isTrialCategory(member.category)).length} en periodo de prueba · ${members.length - rosterMembers.length} retirados`}
                 icon={UsersRound}
               />
             ) : (
@@ -188,11 +189,11 @@ function DashboardPage() {
               ))}
             </div>
           </section>
-          {currentMember.category === "postulante" && (
+          {isTrialCategory(currentMember.category) && (
             <p className="mt-6 rounded-sm border border-line bg-white-warm p-4 text-sm leading-6 text-muted">
-              Tu categoría es Postulante. Después de superar el periodo de
-              prueba y juramentar, Secretaría podrá actualizarla. Cumplir 18
-              años no cambia automáticamente tu categoría.
+              {currentMember.category === "reingresante"
+                ? "Tu categoría es Reingresante. Estás en periodo de prueba para recuperar la categoría Activo. Secretaría registrará el cambio cuando corresponda."
+                : "Tu categoría es Postulante. Después de superar el periodo de prueba y juramentar, Secretaría podrá actualizarla. Cumplir 18 años no cambia automáticamente tu categoría."}
             </p>
           )}
         </>
