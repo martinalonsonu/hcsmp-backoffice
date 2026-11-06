@@ -5,7 +5,7 @@ import { Plus, X } from "lucide-react";
 import { usePortal } from "@/components/portal/portal-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { todayDate, type Movement } from "@/lib/portal";
+import { todayDate, statusLabels, type Movement } from "@/lib/portal";
 
 const money = (amount: number) =>
   new Intl.NumberFormat("es-PE", { style: "currency", currency: "PEN" }).format(
@@ -228,7 +228,8 @@ function TreasuryPanel({ debtsOnly = false }: { debtsOnly?: boolean }) {
                   <option value="">Selecciona un hermano</option>
                   {members.map((member) => (
                     <option key={member.id} value={member.id}>
-                      {member.fullName} · DNI {member.dni}
+                      {member.fullName} · DNI {member.dni} ·{" "}
+                      {statusLabels[member.status]}
                     </option>
                   ))}
                 </select>
@@ -316,7 +317,7 @@ function TreasuryPanel({ debtsOnly = false }: { debtsOnly?: boolean }) {
                   <th scope="row" className="p-4 font-medium">
                     <span className="block">{member.fullName}</span>
                     <span className="mt-1 block text-xs font-normal text-muted">
-                      DNI {member.dni}
+                      DNI {member.dni} · {statusLabels[member.status]}
                     </span>
                   </th>
                   <td className="p-4 text-right whitespace-nowrap">

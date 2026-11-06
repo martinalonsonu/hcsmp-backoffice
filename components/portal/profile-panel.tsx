@@ -11,6 +11,7 @@ import {
   ageOnDate,
   categoryLabels,
   roleLabels,
+  statusLabels,
   type Member,
 } from "@/lib/portal";
 
@@ -168,6 +169,7 @@ function ProfileEditor({ member }: { member: Member }) {
             <div className="mt-3 flex flex-wrap gap-2">
               <Badge variant="accent">{categoryLabels[member.category]}</Badge>
               <Badge>{roleLabels[member.role]}</Badge>
+              <Badge variant="muted">{statusLabels[member.status]}</Badge>
             </div>
           </div>
         </div>
@@ -191,6 +193,12 @@ function ProfileEditor({ member }: { member: Member }) {
             <dt className="text-xs text-muted">Juramentación</dt>
             <dd className="mt-1">{formatDate(member.swornAt)}</dd>
           </div>
+          {member.rejoinedAt && (
+            <div>
+              <dt className="text-xs text-muted">Último reingreso</dt>
+              <dd className="mt-1">{formatDate(member.rejoinedAt)}</dd>
+            </div>
+          )}
         </dl>
         <p className="mt-4 text-xs leading-5 text-muted">
           Para corregir tu identidad o información institucional, comunícate con

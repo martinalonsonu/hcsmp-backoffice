@@ -847,7 +847,7 @@ function MemberRegistration({ onClose }: { onClose: () => void }) {
                         hint={
                           isMinor
                             ? "Los menores de 18 años solo pueden ser postulantes."
-                            : "Todo nuevo registro empieza como Postulante. Cambia a Activo solo si ya superó su prueba y juramentó."
+                            : "La categoría inicial es Postulante. Elige Activo si superó la prueba y juramentó, o Reingresante si regresa en periodo de prueba."
                         }
                       >
                         <select
@@ -870,6 +870,12 @@ function MemberRegistration({ onClose }: { onClose: () => void }) {
                         >
                           <option value="postulante">Postulante</option>
                           <option
+                            value="reingresante"
+                            disabled={!hasBirthDate || isMinor}
+                          >
+                            Reingresante · Periodo de prueba
+                          </option>
+                          <option
                             value="activo"
                             disabled={!hasBirthDate || isMinor}
                           >
@@ -887,6 +893,18 @@ function MemberRegistration({ onClose }: { onClose: () => void }) {
                           required: draft.category === "activo",
                         },
                         "Es distinta de la fecha de ingreso. Desde ella se cuentan los 30 años para la categoría Vitalicio.",
+                      )}
+                      {draft.category === "reingresante" && (
+                        <p className="rounded-sm border border-line bg-paper p-4 text-sm leading-6 text-muted sm:col-span-2">
+                          Registra aquí a un reingresante cuya ficha todavía no
+                          existe en el portal. Si ya figura como retirado, usa
+                          Registrar reingreso desde el listado de retirados para
+                          conservar su ficha, cuenta y movimientos. La fecha de
+                          ingreso y la juramentación corresponden a su historia
+                          original; el reingreso se registrará con la fecha de
+                          hoy. Recuperará la categoría Activo cuando Secretaría
+                          confirme que superó el periodo de prueba.
+                        </p>
                       )}
                       <div className="flex items-start gap-3 rounded-sm bg-paper p-4 sm:col-span-2">
                         <ShieldCheck className="mt-0.5 size-5 shrink-0 text-clay-text" />

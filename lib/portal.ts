@@ -1,5 +1,11 @@
 /** Front-only demo domain. Replace this adapter with a backend before real use. */
-export type Category = "postulante" | "activo" | "vitalicio";
+export type Category = "postulante" | "reingresante" | "activo" | "vitalicio";
+export type MembershipStatus = "vigente" | "retirado";
+export type MembershipEvent = {
+  type: "retiro" | "reingreso";
+  date: string;
+  category: Category;
+};
 export type Role = "estandar" | "tesoreria" | "secretaria" | "presidencia";
 export type Guardian = {
   fullName: string;
@@ -32,6 +38,10 @@ export type Member = MemberDraft & {
   role: Role;
   username: string;
   passwordHash: string;
+  status: MembershipStatus;
+  retiredAt: string;
+  rejoinedAt: string;
+  membershipHistory: MembershipEvent[];
 };
 export type Movement = {
   id: string;
@@ -54,9 +64,74 @@ export const roleLabels: Record<Role, string> = {
 };
 export const categoryLabels: Record<Category, string> = {
   postulante: "Postulante",
+  reingresante: "Reingresante",
   activo: "Activo",
   vitalicio: "Vitalicio",
 };
+
+export const statusLabels: Record<MembershipStatus, string> = {
+  vigente: "Vigente",
+  retirado: "Retirado",
+};
+
+export function isTrialCategory(category: Category): boolean {
+  return category === "postulante" || category === "reingresante";
+}
+
+/** Retired accounts retain their credentials, which work again after readmission. */
+export function canAccessPortal(
+  member: Pick<Member, "status"> | null,
+): boolean {
+  return member?.status === "vigente";
+}
+
+/** Add lifecycle metadata without resetting existing members, credentials or ledger. */
+export function migratePortalData(value: unknown): PortalData {
+  if (!value || typeof value !== "object")
+    throw new Error("Los datos locales no son válidos.");
+  const stored = value as PortalData;
+  if (
+    stored.version !== 1 ||
+    !Array.isArray(stored.members) ||
+    !Array.isArray(stored.movements)
+  )
+    throw new Error("Los datos locales no son compatibles con esta versión.");
+  const members = stored.members.map((item): Member => {
+    if (
+      !item ||
+      typeof item !== "object" ||
+      typeof item.id !== "string" ||
+      typeof item.username !== "string" ||
+      typeof item.passwordHash !== "string" ||
+      typeof item.fullName !== "string" ||
+      !(item.category in categoryLabels)
+    )
+      throw new Error("La ficha local de un hermano no es válida.");
+    const status = item.status ?? "vigente";
+    const membershipHistory = item.membershipHistory ?? [];
+    if (
+      !(status in statusLabels) ||
+      !Array.isArray(membershipHistory) ||
+      !membershipHistory.every(
+        (event) =>
+          event &&
+          (event.type === "retiro" || event.type === "reingreso") &&
+          typeof event.date === "string" &&
+          validDate(event.date) &&
+          event.category in categoryLabels,
+      )
+    )
+      throw new Error("Los datos locales del historial no son válidos.");
+    return {
+      ...item,
+      status,
+      retiredAt: item.retiredAt ?? "",
+      rejoinedAt: item.rejoinedAt ?? "",
+      membershipHistory,
+    };
+  });
+  return { ...stored, members };
+}
 
 export function todayDate(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -133,12 +208,16 @@ export function validateMember(
     errors.fullName = "Ingresa los nombres y apellidos.";
   if (!/^\d{8}$/.test(draft.dni.trim()))
     errors.dni = "El DNI debe tener 8 dígitos.";
-  else if (
-    members.some(
+  else {
+    const duplicate = members.find(
       (member) => member.id !== excludeId && member.dni === draft.dni.trim(),
-    )
-  )
-    errors.dni = "Ya existe un hermano con este DNI.";
+    );
+    if (duplicate)
+      errors.dni =
+        duplicate.status === "retirado"
+          ? "Este hermano está retirado. Registra su reingreso desde el listado de retirados para conservar su ficha y cuenta."
+          : "Ya existe un hermano con este DNI.";
+  }
   const age = ageOnDate(draft.birthDate);
   if (age === null)
     errors.birthDate = "Ingresa una fecha de nacimiento válida, no futura.";
@@ -168,14 +247,13 @@ export function validateMember(
     else if (validDate(draft.joinedAt) && draft.swornAt < draft.joinedAt)
       errors.swornAt = "La juramentación no puede ser anterior al ingreso.";
   }
-  if (draft.category !== "postulante") {
-    if (age === null || age < 18)
-      errors.category =
-        "Un hermano activo o vitalicio debe tener al menos 18 años.";
-    if (!draft.swornAt)
-      errors.swornAt =
-        "Registra la fecha de juramentación para esta categoría.";
-  }
+  if (draft.category !== "postulante" && (age === null || age < 18))
+    errors.category = "Los menores de 18 años solo pueden ser postulantes.";
+  if (
+    (draft.category === "activo" || draft.category === "vitalicio") &&
+    !draft.swornAt
+  )
+    errors.swornAt = "Registra la fecha de juramentación para esta categoría.";
   if (draft.category === "vitalicio" && !isVitalicioEligible(draft))
     errors.category =
       "Para ser vitalicio debe cumplir 65 años de edad o 30 años desde su juramentación.";
@@ -203,7 +281,7 @@ export function assertRole(
   actor: Member | null,
   roles: Role[],
 ): asserts actor is Member {
-  if (!actor || !roles.includes(actor.role))
+  if (!actor || !canAccessPortal(actor) || !roles.includes(actor.role))
     throw new Error("Tu perfil no tiene permiso para realizar esta acción.");
 }
 
@@ -307,16 +385,89 @@ export function updatedMember(
     id: member.id,
     username: member.username,
     passwordHash: member.passwordHash,
+    status: member.status,
+    retiredAt: member.retiredAt,
+    rejoinedAt: member.rejoinedAt,
+    membershipHistory: member.membershipHistory,
   };
   if (!(next.role in roleLabels))
     throw new Error("Selecciona un perfil válido.");
-  if (next.category === "postulante") {
+  if (isTrialCategory(next.category)) {
     if (patch.role && patch.role !== "estandar")
-      throw new Error("Un postulante solo puede tener el perfil Estándar.");
+      throw new Error(
+        "Un postulante o reingresante solo puede tener el perfil Estándar.",
+      );
     next.role = "estandar";
   }
   assertValidMember(next, members, member.id);
+  if (
+    next.status === "vigente" &&
+    next.category === "reingresante" &&
+    member.category !== "reingresante"
+  ) {
+    next.rejoinedAt = todayDate();
+    next.membershipHistory = [
+      ...member.membershipHistory,
+      { type: "reingreso", date: next.rejoinedAt, category: "reingresante" },
+    ];
+  }
   return { ...next, ...normalizeDraft(next) };
+}
+
+export function retiredMember(
+  actor: Member | null,
+  member: Member,
+  date = todayDate(),
+): Member {
+  assertRole(actor, ["secretaria"]);
+  if (member.status === "retirado")
+    throw new Error("El hermano ya está retirado.");
+  if (!validDate(date) || date > todayDate() || date < member.joinedAt)
+    throw new Error(
+      "La fecha de retiro debe ser válida y posterior al ingreso.",
+    );
+  return {
+    ...member,
+    status: "retirado",
+    retiredAt: date,
+    membershipHistory: [
+      ...member.membershipHistory,
+      { type: "retiro", date, category: member.category },
+    ],
+  };
+}
+
+export function readmittedMember(
+  actor: Member | null,
+  member: Member,
+  date = todayDate(),
+): Member {
+  assertRole(actor, ["secretaria"]);
+  if (member.status !== "retirado")
+    throw new Error(
+      "Solo se puede registrar el reingreso de un hermano retirado.",
+    );
+  if (!validDate(date) || date > todayDate() || date < member.retiredAt)
+    throw new Error(
+      "La fecha de reingreso debe ser válida y posterior al retiro.",
+    );
+  const age = ageOnDate(member.birthDate, date);
+  if (age === null)
+    throw new Error(
+      "Corrige la fecha de nacimiento antes de registrar el reingreso.",
+    );
+  const category: Category = age < 18 ? "postulante" : "reingresante";
+  return {
+    ...member,
+    status: "vigente",
+    category,
+    role: "estandar",
+    rejoinedAt: date,
+    membershipHistory: [
+      ...member.membershipHistory,
+      { type: "reingreso", date, category },
+    ],
+  };
 }
 
 const selfEditable = [
@@ -334,7 +485,8 @@ export function ownProfilePatch(
   patch: Partial<MemberDraft>,
   members: Member[],
 ): Member {
-  if (!actor) throw new Error("Inicia sesión para actualizar tu información.");
+  if (!actor || !canAccessPortal(actor))
+    throw new Error("Inicia sesión para actualizar tu información.");
   const next = { ...actor };
   for (const key of selfEditable) {
     if (patch[key] !== undefined) Object.assign(next, { [key]: patch[key] });
@@ -441,10 +593,40 @@ export async function createSeedData(): Promise<PortalData> {
       swornAt: "1989-11-03",
       category: "vitalicio",
     },
+    {
+      id: "demo-retirado",
+      fullName: "Raúl Sánchez Flores",
+      dni: "10000008",
+      username: "retirado",
+      role: "estandar",
+      status: "retirado",
+      retiredAt: "2026-09-15",
+      membershipHistory: [
+        { type: "retiro", date: "2026-09-15", category: "activo" },
+      ],
+    },
+    {
+      id: "demo-reingresante",
+      fullName: "Rosa Elena Vargas",
+      dni: "10000009",
+      username: "reingresante",
+      role: "estandar",
+      category: "reingresante",
+      retiredAt: "2025-03-01",
+      rejoinedAt: "2026-08-01",
+      membershipHistory: [
+        { type: "retiro", date: "2025-03-01", category: "activo" },
+        { type: "reingreso", date: "2026-08-01", category: "reingresante" },
+      ],
+    },
   ];
   const members = await Promise.all(
     profiles.map(async (profile): Promise<Member> => ({
       ...base,
+      status: "vigente",
+      retiredAt: "",
+      rejoinedAt: "",
+      membershipHistory: [],
       birthDate: "1986-05-20",
       address: "Santa María, Huacho",
       phone: "900000000",
