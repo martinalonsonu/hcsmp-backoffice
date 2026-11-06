@@ -49,7 +49,9 @@
   }
 
   button,
-  input {
+  input,
+  select,
+  textarea {
     font: inherit;
   }
 
@@ -58,7 +60,7 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  :where(a, button, input):focus-visible {
+  :where(a, button, input, select, textarea):focus-visible {
     outline: 2px solid var(--clay);
     outline-offset: 3px;
   }

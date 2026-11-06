@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { usePortal } from "@/components/portal/portal-provider";
+import { categoryLabels, roleLabels } from "@/lib/portal";
 import {
-  Archive,
-  CalendarDays,
+  Wallet,
+  UserRound,
   ChartNoAxesCombined,
   CircleHelp,
   LayoutDashboard,
@@ -17,35 +20,52 @@ import { HcsmpBrand } from "@/components/brand/hcsmp-brand";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const navigationItems = [
-  { label: "Resumen", href: "#resumen", icon: LayoutDashboard, active: true },
-  {
-    label: "Miembros",
-    href: "#modulo-miembros",
-    icon: UsersRound,
-    active: false,
-  },
-  {
-    label: "Actividades",
-    href: "#actividades",
-    icon: CalendarDays,
-    active: false,
-  },
-  {
-    label: "Tesorería",
-    href: "#modulo-tesoreria",
-    icon: ChartNoAxesCombined,
-    active: false,
-  },
-  { label: "Archivo", href: "#modulo-archivo", icon: Archive, active: false },
-];
-
 type DashboardShellProps = {
   children: React.ReactNode;
 };
 
 function DashboardShell({ children }: DashboardShellProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const { ready, currentMember, logout, error } = usePortal();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const view = searchParams.get("view") || "summary";
+  useEffect(() => {
+    if (ready && !currentMember) router.replace("/");
+  }, [ready, currentMember, router]);
+
+  if (!ready)
+    return (
+      <p role="status" className="p-8 text-muted">
+        Cargando portal…
+      </p>
+    );
+  if (!currentMember)
+    return (
+      <p className="p-8">
+        <Link href="/">Volver al acceso</Link>
+      </p>
+    );
+
+  const role = currentMember.role;
+  const navigationItems = [
+    { label: "Resumen", view: "summary", icon: LayoutDashboard },
+    ...(role === "secretaria" || role === "presidencia"
+      ? [{ label: "Padrón de hermanos", view: "members", icon: UsersRound }]
+      : []),
+    ...(role === "tesoreria" || role === "presidencia"
+      ? [{ label: "Tesorería", view: "treasury", icon: ChartNoAxesCombined }]
+      : []),
+    ...(role === "secretaria" || role === "tesoreria" || role === "presidencia"
+      ? [{ label: "Deudas generales", view: "debts", icon: Wallet }]
+      : []),
+    { label: "Mi estado de cuenta", view: "account", icon: Wallet },
+    { label: "Mi perfil", view: "profile", icon: UserRound },
+  ];
+  function signOut() {
+    logout();
+    router.replace("/");
+  }
 
   return (
     <div
@@ -100,18 +120,18 @@ function DashboardShell({ children }: DashboardShellProps) {
           >
             Espacio de trabajo
           </p>
-          {navigationItems.map(({ active, href, icon: Icon, label }) => (
+          {navigationItems.map(({ view: targetView, icon: Icon, label }) => (
             <Link
-              aria-current={active ? "page" : undefined}
+              aria-current={view === targetView ? "page" : undefined}
               aria-label={label}
               className={cn(
                 "flex min-h-11 min-w-0 items-center gap-3 rounded-sm px-3 text-xs font-medium transition-colors sm:text-sm lg:w-full",
-                active
+                view === targetView
                   ? "bg-mist text-ink"
                   : "text-muted hover:bg-mist/70 hover:text-ink",
                 isCollapsed && "lg:justify-center lg:px-0",
               )}
-              href={href}
+              href={`/dashboard?view=${targetView}`}
               key={label}
               title={isCollapsed ? label : undefined}
             >
@@ -158,7 +178,7 @@ function DashboardShell({ children }: DashboardShellProps) {
             </p>
           </div>
           <Button
-            asChild
+            onClick={signOut}
             className={cn(
               "mt-3 w-full justify-start",
               isCollapsed && "lg:justify-center lg:px-0",
@@ -166,12 +186,10 @@ function DashboardShell({ children }: DashboardShellProps) {
             size="sm"
             variant="ghost"
           >
-            <Link href="/">
-              <LogOut aria-hidden="true" className="size-4" />
-              <span className={cn(isCollapsed && "lg:sr-only")}>
-                Salir de la demostración
-              </span>
-            </Link>
+            <LogOut aria-hidden="true" className="size-4" />
+            <span className={cn(isCollapsed && "lg:sr-only")}>
+              Cerrar sesión
+            </span>
           </Button>
         </div>
       </aside>
@@ -186,22 +204,45 @@ function DashboardShell({ children }: DashboardShellProps) {
           <div className="flex items-center gap-3">
             <span className="hidden text-right sm:block">
               <span className="block text-xs font-semibold text-ink">
-                Perfil de ejemplo
+                {currentMember.fullName}
               </span>
               <span className="mt-0.5 block text-[0.6875rem] text-muted">
-                Coordinación
+                {roleLabels[currentMember.role]} ·{" "}
+                {categoryLabels[currentMember.category]}
               </span>
             </span>
             <span
-              aria-label="Perfil de ejemplo"
+              aria-label={currentMember.fullName}
               className="grid size-9 place-items-center rounded-full bg-ink text-xs font-semibold text-paper"
               role="img"
             >
-              HC
+              {currentMember.fullName
+                .split(" ")
+                .slice(0, 2)
+                .map((word) => word[0])
+                .join("")}
             </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lg:hidden"
+              aria-label="Cerrar sesión"
+              onClick={signOut}
+            >
+              <LogOut className="size-4" />
+            </Button>
           </div>
         </header>
         <main className="mx-auto w-full max-w-360 px-4 py-6 sm:px-8 sm:py-9 lg:px-10 lg:py-10">
+          <p className="mb-6 rounded-sm border border-line bg-white/70 px-4 py-3 text-xs text-muted">
+            Demostración local · Los registros y accesos se conservan únicamente
+            en este navegador. Usa datos de prueba.
+          </p>
+          {error && (
+            <p role="alert" className="mb-4 text-sm text-red-700">
+              {error}
+            </p>
+          )}
           {children}
           <footer className="mt-10 border-t border-line pt-5 text-xs text-muted">
             Hermandad de Cargadores de San Martín de Porres · Cruz Blanca

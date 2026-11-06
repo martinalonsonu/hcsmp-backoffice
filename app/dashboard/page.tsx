@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { DashboardPage } from "@/components/dashboard/dashboard-page";
 
 export const metadata: Metadata = {
@@ -6,5 +7,9 @@ export const metadata: Metadata = {
 };
 
 export default function DashboardRoute() {
-  return <DashboardPage />;
+  return (
+    <Suspense fallback={<p className="p-8">Cargando portal…</p>}>
+      <DashboardPage />
+    </Suspense>
+  );
 }
