@@ -1,4 +1,33 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HCSMP Backoffice
+
+Portal interno de muestra para la Hermandad de Cargadores de San Martín de
+Porres de Cruz Blanca. Su identidad visual acompaña al sitio público de HCSMP.
+
+## Desarrollo
+
+```bash
+npm install
+npm run dev
+```
+
+La ruta `/` muestra el formulario de acceso y `/dashboard` el panel de ejemplo.
+El formulario solo demuestra la navegación: no valida credenciales ni crea
+cuentas. Las métricas, actividades y módulos del dashboard son datos
+ilustrativos.
+
+## Stack
+
+- Next.js App Router, React y TypeScript
+- Tailwind CSS v4
+- Primitivas de interfaz accesibles con el enfoque shadcn/ui
+
+## Validación
+
+```bash
+npm run lint
+npx tsc --noEmit
+npm run build
+```
 
 ## Getting Started
 
