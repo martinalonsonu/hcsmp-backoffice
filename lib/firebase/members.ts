@@ -1,4 +1,4 @@
-import { addDoc, collection, doc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { addDoc, collection, doc, serverTimestamp, updateDoc, setDoc } from "firebase/firestore";
 import { getFirebaseServices } from "./client";
 import type { PortalIdentity } from "./auth";
 import type { MemberRecord } from "./models";
@@ -21,7 +21,7 @@ export async function createInstitutionalMember(identity: PortalIdentity, input:
   if (!["postulante", "reingresante", "activo", "vitalicio"].includes(input.category))
     throw new Error("Categoría inválida.");
   const { db } = getFirebaseServices();
-  await addDoc(collection(db, "hermanos"), {
+  const payload = {
     fullName, dni, birthDate: input.birthDate, address: input.address.trim(),
     phone: input.phone.trim(), email: input.email.trim(), occupation: input.occupation.trim(),
     maritalStatus: input.maritalStatus.trim(), joinedAt: input.joinedAt,
@@ -30,7 +30,13 @@ export async function createInstitutionalMember(identity: PortalIdentity, input:
     retiredAt: "", rejoinedAt: "", createdAt: date(), updatedAt: date(),
     createdAtServer: serverTimestamp(), updatedAtServer: serverTimestamp(),
     createdBy: identity.uid,
-  });
+  };
+  if (dni) {
+    // Deterministic ID plus create-only Security Rule prevents concurrent duplicates.
+    await setDoc(doc(db, "hermanos", `dni-${dni}`), payload);
+  } else {
+    await addDoc(collection(db, "hermanos"), payload);
+  }
 }
 
 export async function updateInstitutionalMemberContact(identity: PortalIdentity, memberId: string, input: ContactInput) {
