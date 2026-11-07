@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function userDoc() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid));
+    }
+    function authorized() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid))
+        && userDoc().data.activo == true;
+    }
+    function roleIs(role) { return authorized() && userDoc().data.role == role; }
+    function staff() {
+      return roleIs('secretaria') || roleIs('tesoreria') || roleIs('presidencia');
+    }
+    function myMember(memberId) {
+      return authorized() && userDoc().data.hermanoId == memberId;
+    }
+
+    match /usuarios/{uid} {
+      allow get: if authorized() && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
+    }
+
+    match /hermanos/{memberId} {
+      allow get: if myMember(memberId) || staff();
+      allow list: if staff();
+      // Solo Secretaría puede editar; la validación completa se incorporará
+      // antes de activar escrituras con datos reales.
+      allow create, update, delete: if false;
+    }
+
+    match /movimientos/{movementId} {
+      allow get, list: if staff()
+        || (authorized() && resource.data.memberId == userDoc().data.hermanoId);
+      allow create, update, delete: if false;
+    }
+
+    match /historialInstitucional/{eventId} {
+      allow get, list: if roleIs('secretaria') || roleIs('presidencia');
+      allow create, update, delete: if false;
+    }
+
+    match /configuracion/{configId} {
+      allow read: if staff();
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
