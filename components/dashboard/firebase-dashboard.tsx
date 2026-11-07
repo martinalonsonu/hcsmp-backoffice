@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { logoutFirebase, observePortalIdentity, type PortalIdentity } from "@/lib/firebase/auth";
-import { readMyMember, readRoster, readRequests, readAccountMovements, readAllMovements } from "@/lib/firebase/queries";
-import type { MemberRecord, MovementRecord, RequestRecord } from "@/lib/firebase/models";
+import { readMyMember, readRoster, readRequests, readAccountMovements, readAllMovements, readUserDirectory } from "@/lib/firebase/queries";
+import type { MemberRecord, MovementRecord, RequestRecord, UserRecord } from "@/lib/firebase/models";
 import { HcsmpBrand } from "@/components/brand/hcsmp-brand";
 import { createInstitutionalMember, updateInstitutionalMemberContact } from "@/lib/firebase/members";
 import type { Category } from "@/lib/portal";
@@ -15,7 +15,7 @@ import type { RequestStatus } from "@/lib/portal";
 type MemberRow = MemberRecord & { id: string };
 type MovementRow = MovementRecord & { id: string };
 type RequestRow = RequestRecord & { id: string };
-type Snapshot = { member: MemberRow; roster: MemberRow[]; requests: RequestRow[]; movements: MovementRow[] };
+type Snapshot = { member: MemberRow; roster: MemberRow[]; requests: RequestRow[]; movements: MovementRow[]; users: Array<UserRecord & {id:string}> };
 
 export function FirebaseDashboard() {
   const router = useRouter();
@@ -58,12 +58,13 @@ export function FirebaseDashboard() {
             const member = await readMyMember(next);
             if (!member || member.status !== "vigente") throw new Error("Tu ficha institucional no está vigente.");
             const role = next.user.role;
-            const [roster, requests, movements] = await Promise.all([
+            const [roster, requests, movements, users] = await Promise.all([
               role === "secretaria" || role === "presidencia" ? readRoster(next) : Promise.resolve([]),
               readRequests(next),
               role === "tesoreria" || role === "presidencia" ? readAllMovements(next) : readAccountMovements(next),
+              role === "presidencia" ? readUserDirectory(next) : Promise.resolve([]),
             ]);
-            if (active && version === generation) setData({member, roster, requests, movements});
+            if (active && version === generation) setData({member, roster, requests, movements, users});
           } catch (cause) {
             if (active && version === generation) setError(cause instanceof Error ? cause.message : "No se pudo cargar Firestore.");
           } finally {
@@ -87,6 +88,7 @@ export function FirebaseDashboard() {
     {view:"summary",label:"Resumen"},
     ...(canRoster ? [{view:"members",label:"Padrón de hermanos"}] : []),
     ...(canTreasury ? [{view:"treasury",label:"Tesorería"}] : []),
+    ...(role === "presidencia" ? [{view:"users",label:"Usuarios y accesos"}] : []),
     {view:"requests",label:"Solicitudes"},
     {view:"account",label:"Mi estado de cuenta"},
     {view:"profile",label:"Mi perfil"},
@@ -242,6 +244,19 @@ export function FirebaseDashboard() {
               <td className="p-3">{member.status}</td><td className="p-3">
                 <button type="button" className="underline" onClick={() => openMember(member)}>Editar contacto</button>
               </td></tr>)}</tbody>
+          </table></div>
+        </section>}
+        {data && allowed && view === "users" && <section className="space-y-5">
+          <h2 className="font-display text-2xl">Usuarios y accesos</h2>
+          <p className="text-sm text-muted">Directorio de cuentas autorizadas. Crear cuentas o modificar roles requiere
+            un servicio administrativo seguro; estas operaciones no se realizan desde el navegador.</p>
+          <div className="overflow-x-auto rounded-sm border border-line"><table className="w-full text-left text-sm">
+            <thead><tr className="bg-mist"><th className="p-3">Usuario</th><th className="p-3">Hermano vinculado</th>
+              <th className="p-3">Rol</th><th className="p-3">Acceso</th></tr></thead>
+            <tbody>{data.users.map((user) => <tr key={user.id} className="border-t border-line">
+              <td className="p-3">{user.username}</td><td className="p-3">{user.hermanoId}</td>
+              <td className="p-3">{user.role}</td><td className="p-3">{user.activo ? "Habilitado" : "Deshabilitado"}</td>
+            </tr>)}</tbody>
           </table></div>
         </section>}
         {data && allowed && view === "requests" && <section className="space-y-5">
