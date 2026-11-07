@@ -11,12 +11,14 @@ import {
 import {
   assertRole,
   assertValidMember,
+  accrueScheduledDues,
   canAccessPortal,
   createSeedData,
   generatePassword,
   hashPassword,
   normalizeDraft,
   migratePortalData,
+  nextMonth,
   retiredMember,
   readmittedMember,
   todayDate,
@@ -24,11 +26,16 @@ import {
   uniqueUsername,
   updatedMember,
   validateMovement,
+  validateRequestInput,
+  validateRequestStatus,
   verifyPassword,
   type Member,
+  type MemberRequest,
   type MemberDraft,
+  type MemberNameParts,
   type Movement,
   type PortalData,
+  type RequestStatus,
   type Role,
 } from "@/lib/portal";
 
@@ -37,14 +44,19 @@ const SESSION_KEY = "hcsmp.portal.session.v1";
 
 type PortalContextValue = {
   ready: boolean;
+  currentDate: string;
   currentMember: Member | null;
   members: Member[];
   movements: Movement[];
+  requests: MemberRequest[];
+  ordinaryFees: PortalData["ordinaryFees"];
+  billingStartMonth: string;
   error: string | null;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   createMember: (
     draft: MemberDraft,
+    nameParts: MemberNameParts,
   ) => Promise<{ member: Member; username: string; password: string }>;
   updateMember: (
     id: string,
@@ -55,6 +67,9 @@ type PortalContextValue = {
   updateOwnProfile: (patch: Partial<MemberDraft>) => void;
   changePassword: (current: string, next: string) => Promise<void>;
   addMovement: (input: Omit<Movement, "id">) => void;
+  submitRequest: (title: string, content: string) => void;
+  updateRequestStatus: (id: string, status: RequestStatus) => void;
+  updateOrdinaryFee: (amount: number) => void;
 };
 const PortalContext = createContext<PortalContextValue | null>(null);
 
@@ -64,6 +79,7 @@ function parseData(raw: string): PortalData {
 
 export function PortalProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<PortalData | null>(null);
+  const [currentDate, setCurrentDate] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +91,8 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     async function initialize() {
       try {
         const stored = localStorage.getItem(DATA_KEY);
-        const initial = stored ? parseData(stored) : await createSeedData();
+        const loaded = stored ? parseData(stored) : await createSeedData();
+        const initial = accrueScheduledDues(loaded);
         if (cancelled) return;
         // Persist before displaying success; storage failures leave the original state intact.
         const serialized = JSON.stringify(initial);
@@ -90,6 +107,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
           sessionStorage.removeItem(SESSION_KEY);
         dataRef.current = initial;
         sessionRef.current = validSession;
+        setCurrentDate(todayDate());
         setData(initial);
         setSessionId(validSession);
       } catch {
@@ -208,7 +226,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     sessionRef.current = null;
     setSessionId(null);
   }
-  async function createMember(draft: MemberDraft) {
+  async function createMember(draft: MemberDraft, nameParts: MemberNameParts) {
     assertRole(actor(), ["secretaria"]);
     const authorId = actor()!.id;
     assertValidMember(draft, currentData().members);
@@ -220,7 +238,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       throw new Error("La sesión cambió. Vuelve a registrar al hermano.");
     const current = currentData();
     assertValidMember(draft, current.members);
-    const username = uniqueUsername(draft, current.members);
+    const username = uniqueUsername(nameParts, current.members);
     const member: Member = {
       ...normalizeDraft(draft),
       id: crypto.randomUUID(),
@@ -235,7 +253,12 @@ export function PortalProvider({ children }: { children: ReactNode }) {
           ? [{ type: "reingreso", date: todayDate(), category: "reingresante" }]
           : [],
     };
-    commit({ ...current, members: [...current.members, member] });
+    commit(
+      accrueScheduledDues(
+        { ...current, members: [...current.members, member] },
+        todayDate(),
+      ),
+    );
     return { member, username, password };
   }
   function updateMember(
@@ -245,22 +268,26 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     const current = currentData();
     const member = current.members.find((candidate) => candidate.id === id);
     if (!member) throw new Error("No se encontró al hermano.");
+    const withAccruedDues = accrueScheduledDues(current, todayDate());
     const next = updatedMember(actor(), member, patch, current.members);
-    commit({
-      ...current,
-      members: current.members.map((candidate) =>
-        candidate.id === id ? next : candidate,
-      ),
-    });
+    commit(
+      {
+        ...withAccruedDues,
+        members: withAccruedDues.members.map((candidate) =>
+          candidate.id === id ? next : candidate,
+        ),
+      },
+    );
   }
   function retireMember(id: string) {
     const current = currentData();
     const member = current.members.find((candidate) => candidate.id === id);
     if (!member) throw new Error("No se encontró al hermano.");
+    const withAccruedDues = accrueScheduledDues(current, todayDate());
     const next = retiredMember(actor(), member);
     commit({
-      ...current,
-      members: current.members.map((candidate) =>
+      ...withAccruedDues,
+      members: withAccruedDues.members.map((candidate) =>
         candidate.id === id ? next : candidate,
       ),
     });
@@ -269,13 +296,19 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     const current = currentData();
     const member = current.members.find((candidate) => candidate.id === id);
     if (!member) throw new Error("No se encontró al hermano.");
+    const withAccruedDues = accrueScheduledDues(current, todayDate());
     const next = readmittedMember(actor(), member);
-    commit({
-      ...current,
-      members: current.members.map((candidate) =>
-        candidate.id === id ? next : candidate,
+    commit(
+      accrueScheduledDues(
+        {
+          ...withAccruedDues,
+          members: withAccruedDues.members.map((candidate) =>
+            candidate.id === id ? next : candidate,
+          ),
+        },
+        todayDate(),
       ),
-    });
+    );
   }
   function updateOwnProfile(patch: Partial<MemberDraft>) {
     const current = currentData();
@@ -322,14 +355,67 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     if (movement.amount <= 0) throw new Error("El importe mínimo es S/ 0.01.");
     commit({ ...current, movements: [...current.movements, movement] });
   }
+  function submitRequest(title: string, content: string) {
+    const requester = actor();
+    if (!requester)
+      throw new Error("Inicia sesión para enviar una solicitud.");
+    if (requester.role === "secretaria")
+      throw new Error("Secretaría gestiona las solicitudes y no puede enviarlas.");
+    validateRequestInput(title, content);
+    const current = currentData();
+    const submittedAt = todayDate();
+    const request: MemberRequest = {
+      id: crypto.randomUUID(),
+      requesterId: requester.id,
+      title: title.trim(),
+      content: content.trim(),
+      status: "enviada",
+      submittedAt,
+      updatedAt: submittedAt,
+    };
+    commit({ ...current, requests: [...current.requests, request] });
+  }
+  function updateRequestStatus(id: string, status: RequestStatus) {
+    assertRole(actor(), ["secretaria"]);
+    validateRequestStatus(status);
+    const current = currentData();
+    if (!current.requests.some((request) => request.id === id))
+      throw new Error("No se encontró la solicitud.");
+    commit({
+      ...current,
+      requests: current.requests.map((request) =>
+        request.id === id
+          ? { ...request, status, updatedAt: todayDate() }
+          : request,
+      ),
+    });
+  }
+  function updateOrdinaryFee(amount: number) {
+    const current = currentData();
+    assertRole(actor(), ["tesoreria"]);
+    if (!Number.isFinite(amount) || amount <= 0)
+      throw new Error("La cuota ordinaria debe ser mayor que cero.");
+    const effectiveMonth = nextMonth(todayDate().slice(0, 7));
+    const ordinaryFees = [
+      ...current.ordinaryFees.filter(
+        (rate) => rate.effectiveMonth !== effectiveMonth,
+      ),
+      { effectiveMonth, amount: Math.round(amount * 100) / 100 },
+    ].toSorted((a, b) => a.effectiveMonth.localeCompare(b.effectiveMonth));
+    commit({ ...current, ordinaryFees });
+  }
 
   return (
     <PortalContext.Provider
       value={{
         ready,
+        currentDate,
         error,
         members: data?.members ?? [],
         movements: data?.movements ?? [],
+        requests: data?.requests ?? [],
+        ordinaryFees: data?.ordinaryFees ?? [],
+        billingStartMonth: data?.billingStartMonth ?? "",
         currentMember:
           data?.members.find(
             (member) => member.id === sessionId && canAccessPortal(member),
@@ -343,6 +429,9 @@ export function PortalProvider({ children }: { children: ReactNode }) {
         updateOwnProfile,
         changePassword,
         addMovement,
+        submitRequest,
+        updateRequestStatus,
+        updateOrdinaryFee,
       }}
     >
       {children}

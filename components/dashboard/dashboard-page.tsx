@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import {
   HandCoins,
+  ClipboardList,
   ShieldCheck,
   UserRound,
   UsersRound,
@@ -14,6 +15,7 @@ import { StatCard } from "@/components/dashboard/stat-card";
 import { AccountPanel } from "@/components/portal/account-panel";
 import { MembersPanel } from "@/components/portal/members-panel";
 import { ProfilePanel } from "@/components/portal/profile-panel";
+import { RequestsPanel } from "@/components/portal/requests-panel";
 import { TreasuryPanel } from "@/components/portal/treasury-panel";
 import { usePortal } from "@/components/portal/portal-provider";
 import { Badge } from "@/components/ui/badge";
@@ -27,12 +29,13 @@ function DashboardPage() {
   const rosterMembers = members.filter((member) => member.status === "vigente");
   const canSeeMembers = role === "secretaria" || role === "presidencia";
   const canSeeTreasury = role === "tesoreria" || role === "presidencia";
-  const canSeeDebts = canSeeTreasury || role === "secretaria";
+  const canSeeDebts = role === "secretaria";
   const allowed =
     ["summary", "account", "profile"].includes(view) ||
     (view === "members" && canSeeMembers) ||
     (view === "treasury" && canSeeTreasury) ||
-    (view === "debts" && canSeeDebts);
+    (view === "debts" && canSeeDebts) ||
+    (view === "requests" && currentMember !== null);
   const personalBalance = movements
     .filter((item) => item.memberId === currentMember?.id)
     .reduce(
@@ -46,6 +49,16 @@ function DashboardPage() {
       0,
     );
   const modules = [
+    {
+      id: "solicitudes",
+      title: "Solicitudes",
+      description:
+        role === "secretaria"
+          ? "Revisa las solicitudes recibidas y actualiza su seguimiento."
+          : "Envía solicitudes a Secretaría y consulta su estado.",
+      href: "/dashboard?view=requests",
+      icon: ClipboardList,
+    },
     {
       id: "mi-cuenta",
       title: "Mi estado de cuenta",
@@ -81,8 +94,8 @@ function DashboardPage() {
             title: "Tesorería",
             description:
               role === "tesoreria"
-                ? "Registra ingresos, egresos, cuotas y pagos."
-                : "Consulta los movimientos de la institución.",
+                ? "Resumen, movimientos, cuotas, cobranzas y reportes mensuales."
+                : "Consulta los movimientos y reportes de la institución.",
             href: "/dashboard?view=treasury",
             icon: HandCoins,
           },
@@ -121,6 +134,8 @@ function DashboardPage() {
         <TreasuryPanel />
       ) : view === "debts" ? (
         <TreasuryPanel debtsOnly />
+      ) : view === "requests" ? (
+        <RequestsPanel />
       ) : view === "profile" ? (
         <ProfilePanel />
       ) : view === "account" ? (

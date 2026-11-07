@@ -4,8 +4,10 @@ import { test } from "node:test";
 import { strFromU8, unzipSync } from "fflate";
 import { PDFDocument, PDFName, PDFDict } from "pdf-lib";
 import { emptyMemberDraft, todayDate, type Member } from "./portal.ts";
+import { generateMonthlyCashReport } from "./cash-report.ts";
 import {
   downloadMemberDocument,
+  generateMemberRosterPdf,
   generateMemberDocument,
   generateMemberPdf,
   memberDocumentFilename,
@@ -262,6 +264,83 @@ const pdfFont = readFileSync(
   new URL("../public/fonts/LiberationSans-Regular.ttf", import.meta.url),
 );
 
+test("monthly cash report separates cash income, expenses and excludes charges", async () => {
+  const report = await generateMonthlyCashReport(
+    [
+      {
+        id: "income",
+        date: "2026-11-02",
+        description: "Donación",
+        memberId: "",
+        type: "ingreso",
+        amount: 25,
+      },
+      {
+        id: "payment",
+        date: "2026-11-03",
+        description: "Cuota pagada",
+        memberId: "document-test",
+        type: "pago",
+        amount: 10,
+      },
+      {
+        id: "expense",
+        date: "2026-11-04",
+        description: "Materiales",
+        memberId: "",
+        type: "egreso",
+        amount: 8,
+      },
+      {
+        id: "charge",
+        date: "2026-11-04",
+        description: "Cargo no cobrado",
+        memberId: "document-test",
+        type: "cargo",
+        amount: 20,
+      },
+      {
+        id: "other-month",
+        date: "2026-10-31",
+        description: "Fuera del periodo",
+        memberId: "",
+        type: "ingreso",
+        amount: 100,
+      },
+    ],
+    [member()],
+    "2026-11",
+    pdfFont,
+  );
+  const pdf = await PDFDocument.load(report);
+  assert.equal(pdf.getPageCount(), 1);
+  assert.ok(pdf.getTitle()?.includes("noviembre de 2026"));
+  assert.ok(
+    pdf.getSubject()?.includes("2 ingresos · 1 egresos · Caja neta S/ 27.00"),
+  );
+});
+
+test("monthly cash report paginates large ledgers without dropping rows", async () => {
+  const movements = Array.from({ length: 80 }, (_, index) => ({
+    id: `income-${index}`,
+    date: `2026-11-${String((index % 28) + 1).padStart(2, "0")}`,
+    description: `Ingreso de prueba ${index + 1}`,
+    memberId: "",
+    type: "ingreso" as const,
+    amount: 1,
+  }));
+  const report = await generateMonthlyCashReport(
+    movements,
+    [],
+    "2026-11",
+    pdfFont,
+  );
+  const pdf = await PDFDocument.load(report);
+  assert.ok(pdf.getPageCount() > 1);
+  assert.ok(pdf.getSubject()?.includes("80 ingresos"));
+  assert.ok(pdf.getSubject()?.includes("S/ 80.00"));
+});
+
 test("completed PDF preserves the adult/minor page count and includes category and membership status", async () => {
   const bytes = await generateMemberPdf(
     adultPdf,
@@ -318,6 +397,34 @@ test("completed PDF adds a readable appendix for long data and embeds photos", a
     .node.Resources()
     ?.lookup(PDFName.of("XObject"), PDFDict);
   assert.ok(images && images.keys().length > 0);
+});
+
+test("roster PDF includes filters, paginates all rows and omits account credentials", async () => {
+  const members = Array.from({ length: 28 }, (_, index) =>
+    member({
+      id: `roster-${index}`,
+      fullName: `Hermano de prueba ${index + 1}`,
+      dni: String(10000000 + index),
+      username: `private-user-${index}`,
+      passwordHash: `private-hash-${index}`,
+    }),
+  );
+  const bytes = await generateMemberRosterPdf(pdfFont, members, {
+    status: "vigente",
+    category: "activo",
+    ageGroup: "mayores",
+    search: "Hermano",
+  });
+  assert.equal(new TextDecoder().decode(bytes.slice(0, 5)), "%PDF-");
+  const pdf = await PDFDocument.load(bytes);
+  assert.ok(pdf.getPageCount() > 1);
+  assert.ok(pdf.getTitle()?.includes("Padrón de hermanos"));
+  assert.ok(
+    pdf
+      .getSubject()
+      ?.includes("Vigente · Activo · Mayores de edad · Búsqueda: Hermano · 28 registros"),
+  );
+  assert.ok(!pdf.getSubject()?.includes("private-hash"));
 });
 
 test("the browser download always receives a PDF Blob and .pdf filename", async (context) => {

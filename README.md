@@ -46,8 +46,11 @@ Los campos se basan en las fichas de inscripción de mayores y menores.
 La foto es opcional. Las firmas de las fichas físicas no se sustituyen por una
 firma digital en esta versión.
 
-Al guardar se crean juntos la ficha y el acceso con un usuario único, contraseña
-inicial individual y perfil Estándar. No existe un registro sin acceso.
+El formulario separa nombres, primer apellido y segundo apellido. Al guardar se
+crean juntos la ficha y el acceso: el usuario usa el primer nombre y primer
+apellido (`nombre.apellido`); si ya existe, se añade el segundo apellido y, si
+aún coincide, un sufijo numérico. La contraseña inicial es individual y el
+perfil de acceso Estándar. No existe un registro sin acceso.
 La contraseña puede cambiarse desde **Mi perfil**, proporcionando la actual.
 La categoría predeterminada es **Postulante**; Secretaría puede elegir
 intencionalmente **Activo** cuando se cumplan los requisitos o **Reingresante**
@@ -74,7 +77,27 @@ La categoría del hermano es independiente del perfil de acceso:
 | Mi estado de cuenta               | Propio   | Propio    | Propio          | Propio      |
 | Padrón y fichas                   | —        | —         | Gestiona y crea | Consulta    |
 | Ingresos, egresos, cargos y pagos | —        | Gestiona  | —               | Consulta    |
-| Deudas generales                  | —        | Consulta  | Consulta        | Consulta    |
+| Deudas generales                  | —        | —         | Consulta        | —           |
+| Solicitudes                       | Propias  | Propias   | Gestiona todas  | Propias     |
+
+Tesorería registra las cuotas ordinarias como cargos al iniciar el mes
+siguiente: S/ 10 mensuales para Activos y Reingresantes, y 50% para
+Postulantes. Vitalicios están exonerados. Las cuotas extraordinarias son fijas
+(S/ 10 con vencimiento el 6 de mayo y S/ 20 el 3 de noviembre); también se
+registran S/ 200 por reingreso. La cuota ordinaria puede actualizarse y el nuevo
+monto se aplica desde el próximo mes, sin alterar cargos existentes. El resumen
+mensual de caja muestra ingresos, pagos y egresos por separado, excluye cargos
+no cobrados y permite descargar un PDF con subtotales y total neto de caja.
+Los cargos automáticos comienzan en el mes de inicio de facturación guardado en
+la configuración local; los cambios de importe conservan su fecha efectiva.
+El módulo de Tesorería organiza su contenido en Resumen, Movimientos, Cuotas y
+cobranzas, y Reportes; cada sección tiene un enlace directo y Deudas generales
+se mantiene como módulo independiente.
+
+Todos los perfiles tienen acceso al módulo Solicitudes. Los perfiles distintos
+de Secretaría pueden enviar solicitudes con título y detalle, y consultar el
+estado de las propias. Secretaría ve todas las solicitudes y puede cambiar su
+estado entre Enviada, En revisión, Derivada y Resuelta.
 
 Secretaría gestiona manualmente categorías y perfiles desde el padrón. Los
 postulantes y reingresantes no pueden tener perfiles administrativos. Cambiar
@@ -92,6 +115,11 @@ Cada fila del padrón permite **Descargar ficha**, también disponible en el
 modal. La descarga produce un PDF rellenado usando los formatos originales
 aportados: el de menores incluye al apoderado; desde los 18 años se utiliza el de
 mayores. Conserva la identidad del formato y los espacios para firmas manuales.
+Los botones de descarga permiten generar el padrón completo del listado abierto
+o solo los resultados de la búsqueda y filtros aplicados (vigentes o retirados,
+categoría y mayores o menores de edad). El PDF incluye nombre, DNI, edad,
+categoría, estado, fechas de ingreso y juramentación, y celular; puede abarcar
+varias páginas. La generación se realiza localmente en el navegador.
 Las bases PDF se distribuyen en `public/templates/`, derivadas de las fichas
 Word originales. La fuente tipográfica se incluye en `public/fonts/` con su
 licencia. La generación del PDF se realiza

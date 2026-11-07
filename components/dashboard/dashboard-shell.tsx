@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePortal } from "@/components/portal/portal-provider";
 import { categoryLabels, roleLabels } from "@/lib/portal";
@@ -9,11 +9,14 @@ import {
   Wallet,
   UserRound,
   ChartNoAxesCombined,
+  ClipboardList,
   CircleHelp,
   LayoutDashboard,
   LogOut,
+  Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  X,
   UsersRound,
 } from "lucide-react";
 import { HcsmpBrand } from "@/components/brand/hcsmp-brand";
@@ -26,10 +29,19 @@ type DashboardShellProps = {
 
 function DashboardShell({ children }: DashboardShellProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const mobileMenuRef = useRef<HTMLDialogElement>(null);
   const { ready, currentMember, logout, error } = usePortal();
   const router = useRouter();
   const searchParams = useSearchParams();
   const view = searchParams.get("view") || "summary";
+  useEffect(() => {
+    const dialog = mobileMenuRef.current;
+    if (!dialog) return;
+    if (isMobileMenuOpen && !dialog.open) dialog.showModal();
+    if (!isMobileMenuOpen && dialog.open) dialog.close();
+  }, [isMobileMenuOpen]);
+
   useEffect(() => {
     if (ready && !currentMember) router.replace("/");
   }, [ready, currentMember, router]);
@@ -56,9 +68,10 @@ function DashboardShell({ children }: DashboardShellProps) {
     ...(role === "tesoreria" || role === "presidencia"
       ? [{ label: "Tesorería", view: "treasury", icon: ChartNoAxesCombined }]
       : []),
-    ...(role === "secretaria" || role === "tesoreria" || role === "presidencia"
+    ...(role === "secretaria"
       ? [{ label: "Deudas generales", view: "debts", icon: Wallet }]
       : []),
+    { label: "Solicitudes", view: "requests", icon: ClipboardList },
     { label: "Mi estado de cuenta", view: "account", icon: Wallet },
     { label: "Mi perfil", view: "profile", icon: UserRound },
   ];
@@ -74,7 +87,7 @@ function DashboardShell({ children }: DashboardShellProps) {
         isCollapsed && "lg:grid-cols-[5rem_minmax(0,1fr)]",
       )}
     >
-      <aside className="border-b border-line bg-white-warm lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0 lg:border-r">
+      <aside className="hidden border-b border-line bg-white-warm lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0 lg:border-r">
         <div
           className={cn(
             "flex items-center justify-between px-5 py-4 sm:px-7 lg:px-6 lg:py-7",
@@ -193,14 +206,123 @@ function DashboardShell({ children }: DashboardShellProps) {
           </Button>
         </div>
       </aside>
+      <dialog
+        ref={mobileMenuRef}
+        id="mobile-dashboard-navigation"
+        aria-label="Menú de navegación"
+        onCancel={(event) => {
+          event.preventDefault();
+          setIsMobileMenuOpen(false);
+        }}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) {
+            setIsMobileMenuOpen(false);
+          }
+        }}
+        className="fixed inset-0 m-0 h-dvh max-h-none w-screen max-w-none border-0 bg-transparent p-0 text-ink backdrop:bg-ink/50 lg:hidden"
+      >
+        <div className="flex h-full">
+          <aside className="flex h-full w-[min(18rem,85vw)] flex-col border-r border-line bg-white-warm shadow-xl">
+            <div className="flex items-center justify-between border-b border-line px-5 py-5">
+              <Link
+                aria-label="HCSMP, ir al resumen"
+                href="/dashboard"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                <HcsmpBrand iconOnly />
+              </Link>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Cerrar menú"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                <X aria-hidden="true" className="size-5" />
+              </Button>
+            </div>
+            <nav
+              aria-label="Navegación principal"
+              className="flex-1 space-y-1 overflow-y-auto p-3"
+            >
+              <p className="px-3 pb-2 pt-3 text-[0.625rem] font-semibold uppercase tracking-[0.16em] text-muted">
+                Espacio de trabajo
+              </p>
+              {navigationItems.map(
+                ({ view: targetView, icon: Icon, label }) => (
+                  <Link
+                    aria-current={view === targetView ? "page" : undefined}
+                    className={cn(
+                      "flex min-h-12 items-center gap-3 rounded-sm px-3 text-sm font-medium transition-colors",
+                      view === targetView
+                        ? "bg-mist text-ink"
+                        : "text-muted hover:bg-mist/70 hover:text-ink",
+                    )}
+                    href={`/dashboard?view=${targetView}`}
+                    key={label}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    <Icon
+                      aria-hidden="true"
+                      className="size-5 shrink-0"
+                      strokeWidth={1.8}
+                    />
+                    <span>{label}</span>
+                  </Link>
+                ),
+              )}
+            </nav>
+            <div className="border-t border-line p-4">
+              <div className="rounded-sm border border-line bg-paper p-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-ink">
+                  <CircleHelp
+                    aria-hidden="true"
+                    className="size-4 text-clay-text"
+                  />
+                  ¿Necesitas ayuda?
+                </div>
+                <p className="mt-2 text-xs leading-5 text-muted">
+                  Comunícate con la junta directiva para consultas sobre el
+                  portal.
+                </p>
+              </div>
+              <Button
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  signOut();
+                }}
+                className="mt-3 w-full justify-start"
+                size="sm"
+                variant="ghost"
+              >
+                <LogOut aria-hidden="true" className="size-4" />
+                Cerrar sesión
+              </Button>
+            </div>
+          </aside>
+          <div className="min-w-0 flex-1" aria-hidden="true" />
+        </div>
+      </dialog>
       <div className="min-w-0">
         <header className="flex min-h-18 items-center justify-between border-b border-line bg-white-warm/80 px-5 sm:px-8 lg:px-10">
-          <p className="text-xs text-muted sm:text-sm">
-            <span className="sm:hidden">Portal HCSMP</span>
-            <span className="hidden sm:inline">
-              Hermandad de Cargadores de San Martín de Porres
-            </span>
-          </p>
+          <div className="flex min-w-0 items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lg:hidden"
+              aria-label="Abrir menú"
+              aria-controls="mobile-dashboard-navigation"
+              aria-expanded={isMobileMenuOpen}
+              onClick={() => setIsMobileMenuOpen(true)}
+            >
+              <Menu aria-hidden="true" className="size-5" />
+            </Button>
+            <p className="truncate text-xs text-muted sm:text-sm">
+              <span className="sm:hidden">Portal HCSMP</span>
+              <span className="hidden sm:inline">
+                Hermandad de Cargadores de San Martín de Porres
+              </span>
+            </p>
+          </div>
           <div className="flex items-center gap-3">
             <span className="hidden text-right sm:block">
               <span className="block text-xs font-semibold text-ink">

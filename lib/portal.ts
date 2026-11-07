@@ -6,7 +6,16 @@ export type MembershipEvent = {
   date: string;
   category: Category;
 };
+export type CategoryChange = {
+  date: string;
+  category: Category;
+};
 export type Role = "estandar" | "tesoreria" | "secretaria" | "presidencia";
+export type MemberNameParts = {
+  givenNames: string;
+  firstSurname: string;
+  secondSurname: string;
+};
 export type Guardian = {
   fullName: string;
   dni: string;
@@ -42,6 +51,7 @@ export type Member = MemberDraft & {
   retiredAt: string;
   rejoinedAt: string;
   membershipHistory: MembershipEvent[];
+  categoryHistory?: CategoryChange[];
 };
 export type Movement = {
   id: string;
@@ -51,10 +61,27 @@ export type Movement = {
   type: "ingreso" | "egreso" | "cargo" | "pago";
   amount: number;
 };
+export type RequestStatus = "enviada" | "en_revision" | "derivada" | "resuelta";
+export type MemberRequest = {
+  id: string;
+  requesterId: string;
+  title: string;
+  content: string;
+  status: RequestStatus;
+  submittedAt: string;
+  updatedAt: string;
+};
+export type OrdinaryFeeRate = {
+  effectiveMonth: string;
+  amount: number;
+};
 export type PortalData = {
   version: 1;
   members: Member[];
   movements: Movement[];
+  requests: MemberRequest[];
+  ordinaryFees: OrdinaryFeeRate[];
+  billingStartMonth: string;
 };
 export const roleLabels: Record<Role, string> = {
   estandar: "Estándar",
@@ -109,6 +136,7 @@ export function migratePortalData(value: unknown): PortalData {
       throw new Error("La ficha local de un hermano no es válida.");
     const status = item.status ?? "vigente";
     const membershipHistory = item.membershipHistory ?? [];
+    const categoryHistory = item.categoryHistory ?? [];
     if (
       !(status in statusLabels) ||
       !Array.isArray(membershipHistory) ||
@@ -116,6 +144,14 @@ export function migratePortalData(value: unknown): PortalData {
         (event) =>
           event &&
           (event.type === "retiro" || event.type === "reingreso") &&
+          typeof event.date === "string" &&
+          validDate(event.date) &&
+          event.category in categoryLabels,
+      ) ||
+      !Array.isArray(categoryHistory) ||
+      !categoryHistory.every(
+        (event) =>
+          event &&
           typeof event.date === "string" &&
           validDate(event.date) &&
           event.category in categoryLabels,
@@ -128,9 +164,68 @@ export function migratePortalData(value: unknown): PortalData {
       retiredAt: item.retiredAt ?? "",
       rejoinedAt: item.rejoinedAt ?? "",
       membershipHistory,
+      categoryHistory,
     };
   });
-  return { ...stored, members };
+  const requests = stored.requests ?? [];
+  if (
+    !Array.isArray(requests) ||
+    !requests.every(
+      (item) =>
+        item &&
+        typeof item.id === "string" &&
+        typeof item.requesterId === "string" &&
+        typeof item.title === "string" &&
+        typeof item.content === "string" &&
+        (item.status === "enviada" ||
+          item.status === "en_revision" ||
+          item.status === "derivada" ||
+          item.status === "resuelta") &&
+        typeof item.submittedAt === "string" &&
+        validDate(item.submittedAt) &&
+        typeof item.updatedAt === "string" &&
+        validDate(item.updatedAt),
+    )
+  )
+    throw new Error("Las solicitudes locales no son válidas.");
+  const month = todayDate().slice(0, 7);
+  const ordinaryFees = stored.ordinaryFees ?? [
+    { effectiveMonth: month, amount: 10 },
+  ];
+  if (
+    !Array.isArray(ordinaryFees) ||
+    !ordinaryFees.length ||
+    !ordinaryFees.every(
+      (rate) =>
+        rate &&
+        /^\d{4}-(0[1-9]|1[0-2])$/.test(rate.effectiveMonth) &&
+        Number.isFinite(rate.amount) &&
+        rate.amount > 0,
+    )
+  )
+    throw new Error("La configuración de cuotas ordinarias no es válida.");
+  const billingStartMonth = stored.billingStartMonth ?? month;
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(billingStartMonth))
+    throw new Error("El inicio del periodo de cuotas no es válido.");
+  return { ...stored, members, requests, ordinaryFees, billingStartMonth };
+}
+
+export function validateRequestInput(title: string, content: string): void {
+  if (!title.trim()) throw new Error("Ingresa el título de la solicitud.");
+  if (title.trim().length > 120)
+    throw new Error("El título no puede superar los 120 caracteres.");
+  if (!content.trim()) throw new Error("Escribe el detalle de la solicitud.");
+  if (content.trim().length > 5000)
+    throw new Error("El detalle no puede superar los 5000 caracteres.");
+}
+
+export function isRequestStatus(value: string): value is RequestStatus {
+  return ["enviada", "en_revision", "derivada", "resuelta"].includes(value);
+}
+
+export function validateRequestStatus(status: string): asserts status is RequestStatus {
+  if (!isRequestStatus(status))
+    throw new Error("Selecciona un estado de solicitud válido.");
 }
 
 export function todayDate(): string {
@@ -143,6 +238,180 @@ export function todayDate(): string {
   const part = (type: string) =>
     parts.find((item) => item.type === type)?.value;
   return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+export function nextMonth(value: string): string {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(value))
+    throw new Error("Indica un mes válido.");
+  const [year, month] = value.split("-").map(Number);
+  const next = new Date(Date.UTC(year, month, 1));
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function dateInMonth(month: string, day: number): string {
+  return `${month}-${String(day).padStart(2, "0")}`;
+}
+
+function memberHasCoverageOn(member: Member, date: string): boolean {
+  let covered = member.joinedAt <= date;
+  for (const event of [...member.membershipHistory].sort((a, b) =>
+    a.date.localeCompare(b.date),
+  )) {
+    if (event.date > date) break;
+    covered = event.type === "reingreso";
+  }
+  if (member.status === "retirado" && member.retiredAt <= date) covered = false;
+  if (member.rejoinedAt && member.rejoinedAt > date) covered = false;
+  return covered;
+}
+
+function memberCoverageDateInMonth(
+  member: Member,
+  month: string,
+): string | null {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const monthStart = dateInMonth(month, 1);
+  const monthEnd = dateInMonth(
+    month,
+    new Date(Date.UTC(year, monthNumber, 0)).getUTCDate(),
+  );
+  const dates = [
+    monthStart,
+    monthEnd,
+    member.joinedAt,
+    ...member.membershipHistory.map((event) => event.date),
+  ]
+    .filter((date) => date >= monthStart && date <= monthEnd)
+    .toSorted();
+  return dates.toReversed().find((date) => memberHasCoverageOn(member, date)) ?? null;
+}
+
+function memberCategoryOn(member: Member, date: string): Category {
+  let category = member.category;
+  const history = [
+    ...member.membershipHistory,
+    ...(member.categoryHistory ?? []),
+  ].toSorted((a, b) => a.date.localeCompare(b.date));
+  for (const event of history) {
+    if (event.date > date) break;
+    category = event.category;
+  }
+  return category;
+}
+
+function ordinaryFeeForMonth(rates: OrdinaryFeeRate[], month: string): number {
+  const rate = rates
+    .filter((item) => item.effectiveMonth <= month)
+    .toSorted((a, b) => a.effectiveMonth.localeCompare(b.effectiveMonth))
+    .at(-1);
+  if (!rate)
+    throw new Error(`No hay una cuota ordinaria configurada para ${month}.`);
+  return rate.amount;
+}
+
+/** Adds any due monthly and extraordinary charges once, without changing old charges. */
+export function accrueScheduledDues(
+  data: PortalData,
+  asOf = todayDate(),
+): PortalData {
+  const currentMonth = asOf.slice(0, 7);
+  const additions: Movement[] = [];
+  for (const member of data.members) {
+    let month = data.billingStartMonth;
+    while (month < currentMonth) {
+      const dueDate = dateInMonth(nextMonth(month), 1);
+      const coverageDate = memberCoverageDateInMonth(member, month);
+      const category = coverageDate
+        ? memberCategoryOn(member, coverageDate)
+        : "vitalicio";
+      if (
+        dueDate <= asOf &&
+        category !== "vitalicio" &&
+        coverageDate !== null
+      ) {
+        const amount =
+          ordinaryFeeForMonth(data.ordinaryFees, month) *
+          (category === "postulante" ? 0.5 : 1);
+        additions.push({
+          id: `fee-ordinary-${member.id}-${month}`,
+          date: dueDate,
+          description: `Cuota ordinaria · ${month}`,
+          memberId: member.id,
+          type: "cargo",
+          amount,
+        });
+      }
+      month = nextMonth(month);
+    }
+
+    for (
+      let year = Number(data.billingStartMonth.slice(0, 4));
+      year <= Number(currentMonth.slice(0, 4));
+      year += 1
+    ) {
+      for (const [monthNumber, day, label, amount] of [
+        ["05", 6, "Mayo", 10],
+        ["11", 3, "Noviembre", 20],
+      ] as const) {
+        const feeMonth = `${year}-${monthNumber}`;
+        const dueDate = dateInMonth(feeMonth, day);
+        const category = memberCategoryOn(member, dueDate);
+        if (
+          feeMonth >= data.billingStartMonth &&
+          dueDate <= asOf &&
+          category !== "vitalicio" &&
+          memberHasCoverageOn(member, dueDate)
+        )
+          additions.push({
+            id: `fee-extra-${member.id}-${feeMonth}`,
+            date: dueDate,
+            description: `Cuota extraordinaria · ${label} ${year}`,
+            memberId: member.id,
+            type: "cargo",
+            amount,
+          });
+      }
+    }
+
+    for (const event of member.membershipHistory) {
+      if (
+        event.type === "reingreso" &&
+        event.date >= dateInMonth(data.billingStartMonth, 1) &&
+        event.date <= asOf
+      )
+        additions.push({
+          id: `fee-readmission-${member.id}-${event.date}`,
+          date: event.date,
+          description: "Cuota de reingreso",
+          memberId: member.id,
+          type: "cargo",
+          amount: 200,
+        });
+    }
+    if (
+      member.rejoinedAt &&
+      !member.membershipHistory.some(
+        (event) => event.type === "reingreso" && event.date === member.rejoinedAt,
+      ) &&
+      member.rejoinedAt >= dateInMonth(data.billingStartMonth, 1) &&
+      member.rejoinedAt <= asOf
+    )
+      additions.push({
+        id: `fee-readmission-${member.id}-${member.rejoinedAt}`,
+        date: member.rejoinedAt,
+        description: "Cuota de reingreso",
+        memberId: member.id,
+        type: "cargo",
+        amount: 200,
+      });
+  }
+  const existingIds = new Set(data.movements.map((movement) => movement.id));
+  const newMovements = additions.filter(
+    (movement) => !existingIds.has(movement.id),
+  );
+  return newMovements.length
+    ? { ...data, movements: [...data.movements, ...newMovements] }
+    : data;
 }
 
 function validDate(value: string): boolean {
@@ -310,20 +579,40 @@ export function normalizeDraft(draft: MemberDraft): MemberDraft {
   };
 }
 
+function usernamePart(value: string): string {
+  return value
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 export function uniqueUsername(
-  draft: Pick<MemberDraft, "dni">,
+  nameParts: MemberNameParts,
   members: Member[],
 ): string {
-  const base = `h${draft.dni.trim()}`;
-  let name = base;
+  const firstName = usernamePart(nameParts.givenNames.split(/\s+/)[0] ?? "");
+  const firstSurname = usernamePart(nameParts.firstSurname);
+  if (!firstName || !firstSurname)
+    throw new Error("Ingresa el primer nombre y el primer apellido para crear el usuario.");
+  const base = `${firstName}.${firstSurname}`;
+  const occupied = new Set(
+    members.map((member) => member.username.toLocaleLowerCase("es")),
+  );
+  if (!occupied.has(base.toLocaleLowerCase("es"))) return base;
+
+  const secondSurname = usernamePart(nameParts.secondSurname);
+  const disambiguated = secondSurname ? `${base}.${secondSurname}` : "";
+  if (disambiguated && !occupied.has(disambiguated.toLocaleLowerCase("es")))
+    return disambiguated;
+
   let suffix = 2;
-  while (
-    members.some(
-      (member) => member.username.toLowerCase() === name.toLowerCase(),
-    )
-  )
-    name = `${base}.${suffix++}`;
-  return name;
+  let candidate = `${disambiguated || base}.${suffix}`;
+  while (occupied.has(candidate.toLocaleLowerCase("es")))
+    candidate = `${disambiguated || base}.${++suffix}`;
+  return candidate;
 }
 
 export function generatePassword(): string {
@@ -389,6 +678,7 @@ export function updatedMember(
     retiredAt: member.retiredAt,
     rejoinedAt: member.rejoinedAt,
     membershipHistory: member.membershipHistory,
+    categoryHistory: member.categoryHistory ?? [],
   };
   if (!(next.role in roleLabels))
     throw new Error("Selecciona un perfil válido.");
@@ -411,7 +701,10 @@ export function updatedMember(
       { type: "reingreso", date: next.rejoinedAt, category: "reingresante" },
     ];
   }
-  return { ...next, ...normalizeDraft(next) };
+  const categoryHistory = [...(member.categoryHistory ?? [])];
+  if (next.category !== member.category)
+    categoryHistory.push({ date: todayDate(), category: next.category });
+  return { ...next, categoryHistory, ...normalizeDraft(next) };
 }
 
 export function retiredMember(
@@ -669,5 +962,12 @@ export async function createSeedData(): Promise<PortalData> {
     type: "ingreso",
     amount: 250,
   });
-  return { version: 1, members, movements };
+  return {
+  version: 1,
+  members,
+  movements,
+  requests: [],
+  ordinaryFees: [{ effectiveMonth: todayDate().slice(0, 7), amount: 10 }],
+  billingStartMonth: todayDate().slice(0, 7),
+  };
 }

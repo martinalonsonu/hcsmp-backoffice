@@ -33,6 +33,7 @@ import {
   validateMember,
   type Guardian,
   type MemberDraft,
+  type MemberNameParts,
 } from "@/lib/portal";
 import { cn } from "@/lib/utils";
 
@@ -65,6 +66,18 @@ function newGuardian(): Guardian {
     age: "",
     sacraments: [],
   };
+}
+
+function memberFullName(nameParts: MemberNameParts): string {
+  return [
+    nameParts.givenNames,
+    nameParts.firstSurname,
+    nameParts.secondSurname,
+  ]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ");
 }
 
 function Field({
@@ -150,6 +163,11 @@ function SummaryItem({ label, value }: { label: string; value: string }) {
 function MemberRegistration({ onClose }: { onClose: () => void }) {
   const { currentMember, members, createMember } = usePortal();
   const [draft, setDraft] = useState<MemberDraft>(emptyMemberDraft);
+  const [nameParts, setNameParts] = useState<MemberNameParts>({
+    givenNames: "",
+    firstSurname: "",
+    secondSurname: "",
+  });
   const [step, setStep] = useState<Step>("personal");
   const [errors, setErrors] = useState<Errors>({});
   const [message, setMessage] = useState("");
@@ -213,6 +231,13 @@ function MemberRegistration({ onClose }: { onClose: () => void }) {
     setMessage("");
   }
 
+  function updateNamePart(key: keyof MemberNameParts, value: string) {
+    const next = { ...nameParts, [key]: value };
+    setNameParts(next);
+    update("fullName", memberFullName(next));
+    setErrors((previous) => ({ ...previous, [key]: "" }));
+  }
+
   function updateGuardian<K extends keyof Guardian>(
     key: K,
     value: Guardian[K],
@@ -261,7 +286,14 @@ function MemberRegistration({ onClose }: { onClose: () => void }) {
       members,
     );
     const keys: Record<Step, string[]> = {
-      personal: ["fullName", "dni", "birthDate", "photo"],
+      personal: [
+        "givenNames",
+        "firstSurname",
+        "secondSurname",
+        "dni",
+        "birthDate",
+        "photo",
+      ],
       contact: [
         "email",
         "phone",
@@ -285,8 +317,12 @@ function MemberRegistration({ onClose }: { onClose: () => void }) {
     };
     for (const key of keys[step]) if (all[key]) next[key] = all[key];
     if (step === "personal") {
-      if (!draft.fullName.trim())
-        next.fullName = "Ingresa los nombres y apellidos.";
+      if (!nameParts.givenNames.trim())
+        next.givenNames = "Ingresa los nombres.";
+      if (!nameParts.firstSurname.trim())
+        next.firstSurname = "Ingresa el primer apellido.";
+      if (!nameParts.secondSurname.trim())
+        next.secondSurname = "Ingresa el segundo apellido.";
       if (!/^\d{8}$/.test(draft.dni)) next.dni = "El DNI debe tener 8 dígitos.";
       if (
         !draft.birthDate ||
@@ -341,7 +377,7 @@ function MemberRegistration({ onClose }: { onClose: () => void }) {
       const result = await createMember({
         ...draft,
         guardian: isMinor ? draft.guardian : null,
-      });
+      }, nameParts);
       setCredentials({ username: result.username, password: result.password });
       dirtyRef.current = false;
       requestAnimationFrame(() => titleRef.current?.focus());
@@ -418,6 +454,28 @@ function MemberRegistration({ onClose }: { onClose: () => void }) {
           aria-invalid={Boolean(errors[key])}
           aria-describedby={errors[key] ? `${id}-error` : undefined}
           onChange={(event) => update(key, event.target.value as never)}
+        />
+      </Field>
+    );
+  }
+
+  function nameInput(
+    key: keyof MemberNameParts,
+    label: string,
+    autoComplete: string,
+  ) {
+    const id = `registration-${key}`;
+    return (
+      <Field id={id} label={label} error={errors[key]}>
+        <Input
+          id={id}
+          autoComplete={autoComplete}
+          maxLength={80}
+          required
+          value={nameParts[key]}
+          aria-invalid={Boolean(errors[key])}
+          aria-describedby={errors[key] ? `${id}-error` : undefined}
+          onChange={(event) => updateNamePart(key, event.target.value)}
         />
       </Field>
     );
@@ -694,14 +752,9 @@ function MemberRegistration({ onClose }: { onClose: () => void }) {
                           </div>
                         </Field>
                       </div>
-                      <div className="sm:col-span-2">
-                        {input("fullName", "Nombres y apellidos *", {
-                          autoComplete: "name",
-                          maxLength: 150,
-                          required: true,
-                          autoFocus: true,
-                        })}
-                      </div>
+                      {nameInput("givenNames", "Nombres *", "given-name")}
+                      {nameInput("firstSurname", "Primer apellido *", "family-name")}
+                      {nameInput("secondSurname", "Segundo apellido *", "additional-name")}
                       {input("dni", "DNI *", {
                         inputMode: "numeric",
                         maxLength: 8,

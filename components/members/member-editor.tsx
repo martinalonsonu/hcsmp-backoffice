@@ -457,6 +457,7 @@ function MemberEditor({
           </label>
           <label className="grid gap-2 text-sm">
             Fecha de juramentación
+            {!isTrialCategory(draft.category) && " *"}
             <Input
               type="date"
               value={draft.swornAt}

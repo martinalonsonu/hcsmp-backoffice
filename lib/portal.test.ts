@@ -105,6 +105,15 @@ test("activo requiere juramentación y vitalicio requiere elegibilidad", () => {
   assert.ok(portal.validateMember(draft({ category: "activo" })).swornAt);
   assert.ok(
     portal.validateMember(
+      draft({
+        category: "vitalicio",
+        birthDate: "1950-01-01",
+        swornAt: "",
+      }),
+    ).swornAt,
+  );
+  assert.ok(
+    portal.validateMember(
       draft({ category: "vitalicio", swornAt: "2021-01-01" }),
     ).category,
   );
@@ -201,14 +210,29 @@ test("movimientos solo Tesorería; validación del hermano, fecha e importe", ()
   );
 });
 
-test("usuario automático único y contraseña inicial verificable sin texto plano", async () => {
-  assert.equal(portal.uniqueUsername(draft(), []), "h12345678");
+test("usuario usa primer nombre y apellidos para resolver coincidencias", () => {
+  const nameParts = {
+    givenNames: "José María",
+    firstSurname: "Pérez",
+    secondSurname: "García",
+  };
+  assert.equal(portal.uniqueUsername(nameParts, []), "jose.perez");
   assert.equal(
-    portal.uniqueUsername(draft(), [
-      member("estandar", { username: "h12345678" }),
+    portal.uniqueUsername(nameParts, [
+      member("estandar", { username: "jose.perez" }),
     ]),
-    "h12345678.2",
+    "jose.perez.garcia",
   );
+  assert.equal(
+    portal.uniqueUsername(nameParts, [
+      member("estandar", { username: "jose.perez" }),
+      member("estandar", { username: "jose.perez.garcia" }),
+    ]),
+    "jose.perez.garcia.2",
+  );
+});
+
+test("contraseña inicial es única y verificable sin texto plano", async () => {
   const password = portal.generatePassword();
   const hash = await portal.hashPassword(password);
   assert.ok(password.length >= 12);
@@ -279,7 +303,98 @@ test("migración añade estado vigente sin perder fichas, credenciales ni movimi
   assert.equal(migrated.members[0].username, oldMember.username);
   assert.deepEqual(migrated.members[0].membershipHistory, []);
   assert.deepEqual(migrated.movements, [movement]);
+  assert.deepEqual(migrated.requests, []);
   assert.deepEqual(portal.migratePortalData(migrated), migrated);
+});
+
+test("solicitudes requieren título y detalle y validan estados permitidos", () => {
+  assert.throws(() => portal.validateRequestInput("", "Detalle"), /título/);
+  assert.throws(() => portal.validateRequestInput("Título", "  "), /detalle/);
+  assert.throws(
+    () => portal.validateRequestInput("x".repeat(121), "Detalle"),
+    /120 caracteres/,
+  );
+  assert.doesNotThrow(() =>
+    portal.validateRequestInput("Solicitud", "Detalle de prueba"),
+  );
+  assert.equal(portal.isRequestStatus("enviada"), true);
+  assert.equal(portal.isRequestStatus("en_revision"), true);
+  assert.equal(portal.isRequestStatus("derivada"), true);
+  assert.equal(portal.isRequestStatus("resuelta"), true);
+  assert.equal(portal.isRequestStatus("otro"), false);
+  assert.throws(() => portal.validateRequestStatus("otro"), /estado/);
+});
+
+test("cuotas generan cargos al vencimiento, con exoneraciones, mitad aspirante y penalidad", () => {
+  const memberWith = (id: string, category: Member["category"], patch = {}) =>
+    member("estandar", {
+      id,
+      category,
+      ...patch,
+    });
+  const data = {
+    version: 1 as const,
+    members: [
+      memberWith("active", "activo"),
+      memberWith("applicant", "postulante"),
+      memberWith("returning", "reingresante", {
+        rejoinedAt: "2026-11-02",
+        membershipHistory: [
+          { type: "retiro" as const, date: "2026-10-01", category: "activo" as const },
+          { type: "reingreso" as const, date: "2026-11-02", category: "reingresante" as const },
+        ],
+      }),
+      memberWith("life", "vitalicio"),
+    ],
+    movements: [],
+    requests: [],
+    ordinaryFees: [{ effectiveMonth: "2026-11", amount: 10 }],
+    billingStartMonth: "2026-11",
+  };
+  const beforeMonthlyDue = portal.accrueScheduledDues(data, "2026-11-30");
+  assert.deepEqual(
+    beforeMonthlyDue.movements.filter((item) =>
+      item.description.startsWith("Cuota ordinaria"),
+    ),
+    [],
+  );
+  assert.ok(
+    beforeMonthlyDue.movements.some((item) =>
+      item.description.includes("extraordinaria"),
+    ),
+  );
+  const accrued = portal.accrueScheduledDues(data, "2026-12-01");
+  const chargesFor = (id: string) =>
+    accrued.movements.filter((item) => item.memberId === id);
+  assert.deepEqual(
+    chargesFor("active").map(({ description, amount }) => ({
+      description,
+      amount,
+    })),
+    [
+      { description: "Cuota ordinaria · 2026-11", amount: 10 },
+      {
+        description: "Cuota extraordinaria · Noviembre 2026",
+        amount: 20,
+      },
+    ],
+  );
+  assert.equal(chargesFor("applicant")[0]?.amount, 5);
+  assert.equal(
+    chargesFor("applicant").find((item) => item.description.includes("extraordinaria"))
+      ?.amount,
+    20,
+  );
+  assert.deepEqual(
+    chargesFor("returning").map((item) => item.amount).toSorted(),
+    [10, 20, 200],
+  );
+  assert.deepEqual(chargesFor("life"), []);
+  assert.equal(
+    portal.accrueScheduledDues(accrued, "2026-12-01").movements.length,
+    accrued.movements.length,
+  );
+  assert.equal(portal.nextMonth("2026-12"), "2027-01");
 });
 
 test("retiro conserva la ficha y suspende acceso; reingreso conserva la cuenta y pasa a prueba", () => {

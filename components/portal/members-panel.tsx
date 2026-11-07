@@ -21,6 +21,7 @@ import {
   categoryLabels,
   isTrialCategory,
   roleLabels,
+  type Category,
   type Member,
   type MembershipStatus,
 } from "@/lib/portal";
@@ -31,11 +32,15 @@ const selectClass =
 function MembersPanel() {
   const { currentMember, members } = usePortal();
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState<Category | "">("");
+  const [ageGroup, setAgeGroup] = useState<"mayores" | "menores" | "">("");
   const [status, setStatus] = useState<MembershipStatus>("vigente");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [registering, setRegistering] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadingRoster, setDownloadingRoster] = useState<
+    "completo" | "filtrado" | null
+  >(null);
   const [downloadError, setDownloadError] = useState("");
   const [notice, setNotice] = useState("");
   const downloadLock = useRef(false);
@@ -44,13 +49,19 @@ function MembersPanel() {
 
   const selected = members.find((member) => member.id === selectedId);
   const visibleMembers = members.filter((member) => member.status === status);
-  const filtered = visibleMembers.filter(
-    (member) =>
+  const filtered = visibleMembers.filter((member) => {
+    const age = ageOnDate(member.birthDate);
+    return (
       (!category || member.category === category) &&
+      (!ageGroup ||
+        (ageGroup === "mayores"
+          ? age !== null && age >= 18
+          : age !== null && age < 18)) &&
       `${member.fullName} ${member.dni}`
         .toLocaleLowerCase("es")
-        .includes(query.toLocaleLowerCase("es")),
-  );
+        .includes(query.toLocaleLowerCase("es"))
+    );
+  });
 
   async function download(member: Member) {
     if (downloadLock.current) return;
@@ -72,10 +83,42 @@ function MembersPanel() {
     }
   }
 
+  async function downloadRoster(mode: "completo" | "filtrado") {
+    const roster = mode === "completo" ? visibleMembers : filtered;
+    if (downloadLock.current || !roster.length) return;
+    downloadLock.current = true;
+    setDownloadingRoster(mode);
+    setDownloadError("");
+    try {
+      const { downloadMemberRoster } = await import("@/lib/member-document");
+      await downloadMemberRoster(
+        roster,
+        mode === "completo"
+          ? { status }
+          : {
+              status,
+              category: category || undefined,
+              ageGroup: ageGroup || undefined,
+              search: query,
+            },
+      );
+    } catch (cause) {
+      setDownloadError(
+        cause instanceof Error
+          ? cause.message
+          : "No se pudo preparar el padrón para descargar. Inténtalo nuevamente.",
+      );
+    } finally {
+      downloadLock.current = false;
+      setDownloadingRoster(null);
+    }
+  }
+
   function lifecycleComplete(nextStatus: MembershipStatus, message: string) {
     setSelectedId(null);
     setStatus(nextStatus);
     setCategory("");
+    setAgeGroup("");
     setQuery("");
     setNotice(message);
   }
@@ -139,6 +182,7 @@ function MembersPanel() {
               setStatus(value);
               setQuery("");
               setCategory("");
+              setAgeGroup("");
               setDownloadError("");
             }}
           >
@@ -166,7 +210,7 @@ function MembersPanel() {
               : "Este listado muestra únicamente a los hermanos vigentes. Los retirados se consultan en su listado separado."}
           </p>
         </div>
-        <div className="grid gap-3 border-b border-line p-4 sm:grid-cols-[minmax(0,1fr)_15rem] sm:p-5">
+        <div className="grid gap-3 border-b border-line p-4 sm:grid-cols-[minmax(0,1fr)_15rem_15rem] sm:p-5">
           <label className="relative">
             <span className="sr-only">Buscar por nombre o DNI</span>
             <Search
@@ -185,7 +229,9 @@ function MembersPanel() {
             <select
               className={selectClass}
               value={category}
-              onChange={(event) => setCategory(event.target.value)}
+              onChange={(event) =>
+                setCategory(event.target.value as Category | "")
+              }
             >
               <option value="">Todas las categorías</option>
               {Object.entries(categoryLabels).map(([value, label]) => (
@@ -195,6 +241,50 @@ function MembersPanel() {
               ))}
             </select>
           </label>
+          <label>
+            <span className="sr-only">Filtrar edad</span>
+            <select
+              className={selectClass}
+              value={ageGroup}
+              onChange={(event) =>
+                setAgeGroup(event.target.value as typeof ageGroup)
+              }
+            >
+              <option value="">Todas las edades</option>
+              <option value="mayores">Mayores de edad</option>
+              <option value="menores">Menores de edad</option>
+            </select>
+          </label>
+          <div className="flex flex-wrap items-center justify-between gap-3 sm:col-span-3">
+            <p className="text-xs text-muted">
+              Descarga el padrón completo de este listado o solo los resultados
+              que coinciden con los filtros.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!visibleMembers.length || downloadingRoster !== null || downloadingId !== null}
+                onClick={() => void downloadRoster("completo")}
+              >
+                <Download className="size-4" aria-hidden="true" />
+                {downloadingRoster === "completo"
+                  ? "Preparando…"
+                  : `Padrón completo PDF (${visibleMembers.length})`}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!filtered.length || downloadingRoster !== null || downloadingId !== null}
+                onClick={() => void downloadRoster("filtrado")}
+              >
+                <Download className="size-4" aria-hidden="true" />
+                {downloadingRoster === "filtrado"
+                  ? "Preparando…"
+                  : `Padrón filtrado PDF (${filtered.length})`}
+              </Button>
+            </div>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
@@ -273,7 +363,7 @@ function MembersPanel() {
                       <Button
                         variant="outline"
                         size="sm"
-                        disabled={downloadingId !== null}
+                        disabled={downloadingId !== null || downloadingRoster !== null}
                         onClick={() => void download(member)}
                         aria-label={`Descargar ficha PDF de ${member.fullName}`}
                       >

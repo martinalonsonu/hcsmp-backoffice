@@ -11,7 +11,15 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { ageOnDate, categoryLabels, todayDate, type Member } from "./portal.ts";
+import {
+  ageOnDate,
+  categoryLabels,
+  statusLabels,
+  todayDate,
+  type Category,
+  type Member,
+  type MembershipStatus,
+} from "./portal.ts";
 
 const DOCUMENT_XML = "word/document.xml";
 const PDF_TYPE = "application/pdf";
@@ -1022,6 +1030,222 @@ export async function generateMemberPdf(
   return pdf.save({ useObjectStreams: false });
 }
 
+export type MemberRosterFilters = {
+  status: MembershipStatus;
+  category?: Category;
+  ageGroup?: "mayores" | "menores";
+  search?: string;
+};
+
+const rosterPageSize: [number, number] = [841.89, 595.28];
+const rosterColumns = [
+  { title: "#", width: 24 },
+  { title: "Nombres y apellidos", width: 220 },
+  { title: "DNI", width: 64 },
+  { title: "Edad", width: 36 },
+  { title: "Categoría", width: 95 },
+  { title: "Estado", width: 58 },
+  { title: "Ingreso", width: 80 },
+  { title: "Juramentación", width: 100 },
+  { title: "Celular", width: 90 },
+] as const;
+
+function rosterDescription(filters: MemberRosterFilters): string {
+  const parts = [statusLabels[filters.status]];
+  if (filters.category) parts.push(categoryLabels[filters.category]);
+  if (filters.ageGroup)
+    parts.push(
+      filters.ageGroup === "mayores" ? "Mayores de edad" : "Menores de edad",
+    );
+  if (filters.search?.trim()) parts.push(`Búsqueda: ${filters.search.trim()}`);
+  return parts.join(" · ");
+}
+
+function rosterFilename(filters: MemberRosterFilters): string {
+  const suffix = [
+    filters.status,
+    filters.category,
+    filters.ageGroup,
+  ].filter(Boolean).join("-");
+  return `padron-${suffix || "completo"}.pdf`;
+}
+
+/** Creates a paginated roster PDF locally without exporting account credentials. */
+export async function generateMemberRosterPdf(
+  fontBytes: Uint8Array,
+  members: Member[],
+  filters: MemberRosterFilters,
+): Promise<Uint8Array> {
+  const pdf = await PDFDocument.create();
+  pdf.registerFontkit(fontkit);
+  const font = await pdf.embedFont(fontBytes, { subset: true });
+  const [width, height] = rosterPageSize;
+  const margin = 32;
+  const contentWidth = width - margin * 2;
+  const description = rosterDescription(filters);
+  let y = 0;
+  let pageNumber = 0;
+
+  function addPage(): PDFPage {
+    const nextPage = pdf.addPage(rosterPageSize);
+    pageNumber += 1;
+    nextPage.drawText("Padrón de hermanos", {
+      x: margin,
+      y: height - 35,
+      size: 16,
+      font,
+      color: rgb(0.12, 0.18, 0.17),
+    });
+    nextPage.drawText(description, {
+      x: margin,
+      y: height - 52,
+      size: 8,
+      font,
+      color: rgb(0.32, 0.35, 0.34),
+      maxWidth: contentWidth,
+    });
+    nextPage.drawText(
+      `${members.length} ${members.length === 1 ? "hermano" : "hermanos"} · Generado ${dateLabel(todayDate())}`,
+      {
+        x: margin,
+        y: height - 66,
+        size: 8,
+        font,
+        color: rgb(0.32, 0.35, 0.34),
+      },
+    );
+    y = height - 82;
+    const headerHeight = 24;
+    nextPage.drawRectangle({
+      x: margin,
+      y: y - headerHeight + 4,
+      width: contentWidth,
+      height: headerHeight,
+      color: rgb(0.13, 0.2, 0.19),
+    });
+    let x = margin;
+    for (const column of rosterColumns) {
+      nextPage.drawText(column.title, {
+        x: x + 4,
+        y: y - 11,
+        size: 7.5,
+        font,
+        color: rgb(1, 1, 1),
+        maxWidth: column.width - 8,
+      });
+      x += column.width;
+    }
+    y -= headerHeight;
+    return nextPage;
+  }
+
+  let page = addPage();
+  if (!members.length) {
+    page.drawText("No hay hermanos que coincidan con los filtros seleccionados.", {
+      x: margin,
+      y: y - 12,
+      size: 10,
+      font,
+      color: rgb(0.25, 0.25, 0.25),
+    });
+  }
+
+  members.forEach((member, index) => {
+    const age = ageOnDate(member.birthDate);
+    const values = [
+      String(index + 1),
+      plainText(member.fullName),
+      plainText(member.dni),
+      age === null ? "—" : String(age),
+      categoryLabels[member.category],
+      statusLabels[member.status],
+      dateLabel(member.joinedAt),
+      dateLabel(member.swornAt),
+      plainText(member.phone || "—"),
+    ];
+    const nameLines = wrappedLines(values[1], font, 8, rosterColumns[1].width - 8);
+    const rowHeight = Math.max(22, nameLines.length * 9 + 8);
+    if (y - rowHeight < 34) page = addPage();
+    if (index % 2 === 1)
+      page.drawRectangle({
+        x: margin,
+        y: y - rowHeight + 4,
+        width: contentWidth,
+        height: rowHeight,
+        color: rgb(0.96, 0.96, 0.94),
+      });
+    let x = margin;
+    values.forEach((value, columnIndex) => {
+      const lines =
+        columnIndex === 1
+          ? nameLines
+          : wrappedLines(
+              value,
+              font,
+              7.5,
+              rosterColumns[columnIndex].width - 8,
+            );
+      lines.forEach((line, lineIndex) => {
+        page.drawText(line, {
+          x: x + 4,
+          y: y - 12 - lineIndex * 9,
+          size: columnIndex === 1 ? 8 : 7.5,
+          font,
+          color: rgb(0.13, 0.15, 0.14),
+        });
+      });
+      x += rosterColumns[columnIndex].width;
+    });
+    y -= rowHeight;
+  });
+
+  pdf.getPages().forEach((rosterPage, index) => {
+    rosterPage.drawText(`Página ${index + 1} de ${pageNumber}`, {
+      x: width - margin - 60,
+      y: 17,
+      size: 7,
+      font,
+      color: rgb(0.4, 0.4, 0.4),
+    });
+  });
+  pdf.setTitle("Padrón de hermanos · HCSMP");
+  pdf.setSubject(`${description} · ${members.length} registros`);
+  pdf.setCreator("Portal HCSMP");
+  pdf.setProducer("HCSMP · generación local del padrón");
+  return pdf.save({ useObjectStreams: false });
+}
+
+/** Downloads the selected roster locally; no member data is uploaded. */
+export async function downloadMemberRoster(
+  members: Member[],
+  filters: MemberRosterFilters,
+): Promise<void> {
+  const fontResponse = await fetch("/fonts/LiberationSans-Regular.ttf");
+  if (!fontResponse.ok)
+    throw new Error(
+      "No se pudo cargar la fuente para generar el padrón PDF. Inténtalo nuevamente.",
+    );
+  const font = new Uint8Array(await fontResponse.arrayBuffer());
+  const bytes = await generateMemberRosterPdf(font, members, filters);
+  downloadPdf(bytes, rosterFilename(filters));
+}
+
+function downloadPdf(bytes: Uint8Array, filename: string): void {
+  const blob = new Blob([new Uint8Array(bytes).buffer], { type: PDF_TYPE });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.hidden = true;
+  document.body.appendChild(link);
+  try {
+    link.click();
+  } finally {
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+}
+
 /** Client-only PDF download; personal data is never uploaded to a conversion service. */
 export async function downloadMemberDocument(member: Member): Promise<void> {
   const path = templatePathForMember(member);
@@ -1045,17 +1269,5 @@ export async function downloadMemberDocument(member: Member): Promise<void> {
     new Uint8Array(font),
     prepared,
   );
-  const blob = new Blob([new Uint8Array(bytes).buffer], { type: PDF_TYPE });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = memberDocumentFilename(member);
-  link.hidden = true;
-  document.body.appendChild(link);
-  try {
-    link.click();
-  } finally {
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
+  downloadPdf(bytes, memberDocumentFilename(member));
 }
