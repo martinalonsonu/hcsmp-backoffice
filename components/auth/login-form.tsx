@@ -15,7 +15,6 @@ function LoginForm() {
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
 
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending) return;
@@ -23,7 +22,7 @@ function LoginForm() {
     setMessage("");
     try {
       await loginWithUsername(username, password);
-      router.push("/firebase-workspace");
+      router.replace("/dashboard");
     } catch (failure) {
       setMessage(
         failure instanceof Error
