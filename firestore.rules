@@ -94,6 +94,8 @@ service cloud.firestore {
         && request.resource.data.updatedAt is string
         && request.resource.data.updatedAtServer == request.time;
       allow delete: if false;
+    }
+
     match /movimientos/{movementId} {
       allow get, list: if financeReader()
         || (authorized() && resource.data.memberId == myId());
