@@ -1,32 +1,23 @@
-/** Modelos persistidos; las contraseñas nunca se guardan en Firestore. */
-export type Role = "estandar" | "tesoreria" | "secretaria" | "presidencia";
-export type Category = "postulante" | "reingresante" | "activo" | "vitalicio" | "honorario";
-export type MembershipStatus = "vigente" | "retirado";
+/** Firestore contracts aligned with lib/portal.ts (2026-11-06).
+ * Auth passwords and password hashes must never be persisted here.
+ */
+import type {
+  Category, Guardian, MemberRequest, OrdinaryFeeRate, RequestStatus, Role,
+} from "@/lib/portal";
 
 export interface UserRecord {
-  hermanoId: string | null; // null para una cuenta de servicio excepcional
-  username: string;
+  hermanoId: string;
+  username: string; // e.g. nombre.apellido; Firebase Auth uses a separate email identity
   role: Role;
   activo: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface GuardianRecord {
-  fullName: string;
-  dni: string;
-  education: string;
-  address: string;
-  phone: string;
-  relationship: string;
-  age: string;
-  sacraments: string[];
-}
-
 export interface MemberRecord {
   fullName: string;
   dni: string;
-  birthDate: string; // YYYY-MM-DD, calendario de Lima
+  birthDate: string;
   address: string;
   phone: string;
   email: string;
@@ -35,10 +26,11 @@ export interface MemberRecord {
   joinedAt: string;
   swornAt: string;
   category: Category;
-  status: MembershipStatus;
+  status: "vigente" | "retirado";
   sacraments: string[];
-  photoUrl: string | null; // Nunca imágenes base64 en documentos Firestore
-  guardian: GuardianRecord | null;
+  /** Reference to a separately stored photo; never base64 in Firestore. */
+  photoUrl: string | null;
+  guardian: Guardian | null;
   retiredAt: string;
   rejoinedAt: string;
   createdAt: string;
@@ -54,7 +46,7 @@ export interface MembershipHistoryRecord {
   createdAt: string;
 }
 
-/** Compatible semánticamente con Movement de lib/portal.ts; importes en céntimos. */
+/** Values in integer céntimos; convert to/from the UI's PEN amounts at the adapter. */
 export interface MovementRecord {
   date: string;
   description: string;
@@ -63,4 +55,20 @@ export interface MovementRecord {
   amountCents: number;
   createdBy: string;
   createdAt: string;
+}
+
+/** Requests are a current feature, not a future extension. */
+export interface RequestRecord extends Pick<
+  MemberRequest,
+  "requesterId" | "title" | "content" | "submittedAt" | "updatedAt"
+> {
+  status: RequestStatus;
+}
+
+/** Mirrors the effective-dated fee rates and billing start in PortalData. */
+export interface EconomicSettingsRecord {
+  billingStartMonth: string;
+  ordinaryFees: OrdinaryFeeRate[];
+  updatedBy: string;
+  updatedAt: string;
 }
