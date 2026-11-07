@@ -147,6 +147,23 @@ service cloud.firestore {
         ))
         && request.resource.data.updatedAt is string
         && request.resource.data.updatedAtServer == request.time;
+      // Secretary-only category transition paired with an immutable history event.
+      allow update: if secretary()
+        && resource.data.status == 'vigente'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'category', 'updatedAt', 'updatedAtServer', 'lastCategoryEventId'
+        ])
+        && request.resource.data.category in ['postulante','reingresante','activo','vitalicio']
+        && request.resource.data.category != resource.data.category
+        && request.resource.data.lastCategoryEventId is string
+        && request.resource.data.lastCategoryEventId.size() >= 10
+        && request.resource.data.updatedAt is string
+        && request.resource.data.updatedAt.size() == 10
+        && request.resource.data.updatedAtServer == request.time
+        && getAfter(/databases/$(database)/documents/historialInstitucional/$(request.resource.data.lastCategoryEventId)).data.hermanoId == memberId
+        && getAfter(/databases/$(database)/documents/historialInstitucional/$(request.resource.data.lastCategoryEventId)).data.fromCategory == resource.data.category
+        && getAfter(/databases/$(database)/documents/historialInstitucional/$(request.resource.data.lastCategoryEventId)).data.category == request.resource.data.category
+        && getAfter(/databases/$(database)/documents/historialInstitucional/$(request.resource.data.lastCategoryEventId)).data.recordedBy == request.auth.uid;
       allow delete: if false;
     }
 
@@ -199,7 +216,31 @@ service cloud.firestore {
 
     match /historialInstitucional/{eventId} {
       allow get, list: if rosterReader();
-      allow create, update, delete: if false;
+      allow create: if secretary()
+        && request.resource.data.keys().hasOnly([
+          'hermanoId','type','fromCategory','category','date','reason',
+          'recordedBy','createdAt','createdAtServer'
+        ])
+        && request.resource.data.keys().hasAll([
+          'hermanoId','type','fromCategory','category','date','reason',
+          'recordedBy','createdAt','createdAtServer'
+        ])
+        && request.resource.data.hermanoId is string
+        && request.resource.data.type == 'cambio_categoria'
+        && request.resource.data.fromCategory in ['postulante','reingresante','activo','vitalicio']
+        && request.resource.data.category in ['postulante','reingresante','activo','vitalicio']
+        && request.resource.data.category != request.resource.data.fromCategory
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() >= 10
+        && request.resource.data.reason.size() <= 500
+        && request.resource.data.recordedBy == request.auth.uid
+        && request.resource.data.date is string
+        && request.resource.data.date.size() == 10
+        && request.resource.data.createdAt == request.resource.data.date
+        && request.resource.data.createdAtServer == request.time
+        && getAfter(/databases/$(database)/documents/hermanos/$(request.resource.data.hermanoId)).data.lastCategoryEventId == eventId
+        && getAfter(/databases/$(database)/documents/hermanos/$(request.resource.data.hermanoId)).data.category == request.resource.data.category;
+      allow update, delete: if false;
     }
 
     match /configuracionEconomica/{documentId} {

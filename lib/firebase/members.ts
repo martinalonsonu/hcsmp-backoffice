@@ -58,3 +58,26 @@ export async function updateInstitutionalMemberContact(identity: PortalIdentity,
     updatedAt: date(), updatedAtServer: serverTimestamp(),
   });
 }
+
+/** Atomic category change and immutable institutional history; Secretary only. */
+export async function changeMemberCategory(identity: PortalIdentity, memberId: string, category: MemberRecord["category"], reason: string) {
+  if (identity.user.role !== "secretaria") throw new Error("Solo Secretaría puede cambiar categorías.");
+  const motive = reason.trim();
+  if (motive.length < 10 || motive.length > 500) throw new Error("Indica un motivo de 10 a 500 caracteres.");
+  if (!["postulante","reingresante","activo","vitalicio"].includes(category)) throw new Error("Categoría inválida.");
+  const { db } = getFirebaseServices();
+  const memberRef = doc(db,"hermanos",memberId);
+  const eventRef = doc(collection(db,"historialInstitucional"));
+  await runTransaction(db,async (tx) => {
+    const snapshot = await tx.get(memberRef);
+    if (!snapshot.exists()) throw new Error("No se encontró al hermano.");
+    const current = snapshot.data() as MemberRecord;
+    if (current.status !== "vigente") throw new Error("Solo se puede cambiar la categoría de hermanos vigentes.");
+    if (current.category === category) throw new Error("Selecciona una categoría diferente.");
+    const now = date();
+    tx.update(memberRef,{category,updatedAt:now,updatedAtServer:serverTimestamp(),lastCategoryEventId:eventRef.id});
+    tx.set(eventRef,{hermanoId:memberId,type:"cambio_categoria",fromCategory:current.category,
+      category,date:now,reason:motive,recordedBy:identity.uid,createdAt:now,
+      createdAtServer:serverTimestamp()});
+  });
+}
