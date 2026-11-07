@@ -7,7 +7,7 @@ import { logoutFirebase, observePortalIdentity, type PortalIdentity } from "@/li
 import { readMyMember, readRoster, readRequests, readAccountMovements, readAllMovements, readUserDirectory } from "@/lib/firebase/queries";
 import type { MemberRecord, MovementRecord, RequestRecord, UserRecord } from "@/lib/firebase/models";
 import { HcsmpBrand } from "@/components/brand/hcsmp-brand";
-import { createInstitutionalMember, updateInstitutionalMemberContact, changeMemberCategory } from "@/lib/firebase/members";
+import { createInstitutionalMember, updateInstitutionalMemberContact, changeMemberCategory, changeMemberLifecycle } from "@/lib/firebase/members";
 import type { Category, Guardian } from "@/lib/portal";
 import { submitInstitutionalRequest, setInstitutionalRequestStatus } from "@/lib/firebase/requests";
 import type { RequestStatus } from "@/lib/portal";
@@ -28,6 +28,8 @@ export function FirebaseDashboard() {
   const [filter, setFilter] = useState("");
   const [memberBusy, setMemberBusy] = useState(false);
   const [categoryTarget, setCategoryTarget] = useState<MemberRow | null>(null);
+  const [lifecycleTarget, setLifecycleTarget] = useState<MemberRow | null>(null);
+  const [lifecycleReason, setLifecycleReason] = useState("");
   const [nextCategory, setNextCategory] = useState<Category>("activo");
   const [categoryReason, setCategoryReason] = useState("");
   const [memberMessage, setMemberMessage] = useState("");
@@ -156,6 +158,20 @@ export function FirebaseDashboard() {
     } finally { setMemberBusy(false); }
   }
 
+  async function submitLifecycleChange(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!identity || !lifecycleTarget || memberBusy) return;
+    setMemberBusy(true); setMemberMessage("");
+    try {
+      await changeMemberLifecycle(identity,lifecycleTarget.id,
+        lifecycleTarget.status === "vigente" ? "retiro" : "reingreso",lifecycleReason);
+      setLifecycleTarget(null); setLifecycleReason("");
+      setReload((value) => value + 1);
+    } catch (cause) {
+      setMemberMessage(cause instanceof Error ? cause.message : "No se pudo registrar el cambio de estado.");
+    } finally { setMemberBusy(false); }
+  }
+
   function openMember(member: MemberRow | null) {
     setEditingMember(member);
     setMemberMessage("");
@@ -231,6 +247,10 @@ export function FirebaseDashboard() {
                   onClick={() => { setCategoryTarget(member); setNextCategory(member.category); setCategoryReason(""); setMemberMessage(""); }}>
                   Cambiar categoría
                 </button>}
+                {role === "secretaria" && <button type="button" className="ml-3 underline"
+                  onClick={() => { setLifecycleTarget(member); setLifecycleReason(""); setMemberMessage(""); }}>
+                  {member.status === "vigente" ? "Registrar retiro" : "Registrar reingreso"}
+                </button>}
               </td></tr>)}</tbody>
           </table></div>
         </section>}
@@ -300,6 +320,33 @@ export function FirebaseDashboard() {
           estarán disponibles cuando sus operaciones seguras estén implementadas.
         </p>}
       </main>
+      {lifecycleTarget && role === "secretaria" && <div role="dialog" aria-modal="true" aria-labelledby="lifecycle-title"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <form onSubmit={(event) => void submitLifecycleChange(event)}
+          className="w-full max-w-lg space-y-5 rounded-sm bg-white-warm p-6">
+          <h2 id="lifecycle-title" className="font-display text-2xl">
+            {lifecycleTarget.status === "vigente" ? "Registrar retiro" : "Registrar reingreso"}
+          </h2>
+          <p className="text-sm">{lifecycleTarget.fullName} · Estado actual: <strong>{lifecycleTarget.status}</strong></p>
+          <p className="text-sm text-muted">{lifecycleTarget.status === "vigente"
+            ? "El hermano pasará a retirado y perderá acceso al portal. Su ficha, historial y movimientos económicos se conservan."
+            : "El hermano regresará como reingresante, sin recuperar automáticamente su categoría anterior. La admisión posterior como activo corresponde a Secretaría."}</p>
+          <label className="block space-y-2 text-sm"><span>Motivo o referencia al acuerdo (obligatorio)</span>
+            <textarea required minLength={10} maxLength={500} rows={4}
+              className="w-full rounded-sm border border-line p-3"
+              value={lifecycleReason} onChange={(event) => setLifecycleReason(event.target.value)}/>
+          </label>
+          {memberMessage && <p role="alert" className="text-sm text-red-700">{memberMessage}</p>}
+          <div className="flex justify-end gap-3">
+            <button type="button" disabled={memberBusy} className="rounded-sm border border-line px-4 py-2"
+              onClick={() => setLifecycleTarget(null)}>Cancelar</button>
+            <button type="submit" disabled={memberBusy}
+              className="rounded-sm bg-forest px-4 py-2 text-white disabled:opacity-50">
+              {memberBusy ? "Guardando…" : "Confirmar"}
+            </button>
+          </div>
+        </form>
+      </div>}
       {categoryTarget && role === "secretaria" && <div role="dialog" aria-modal="true" aria-labelledby="category-title"
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
         <form onSubmit={(event) => void submitCategoryChange(event)} className="w-full max-w-lg space-y-5 rounded-sm bg-white-warm p-6">

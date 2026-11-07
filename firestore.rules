@@ -164,6 +164,35 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/historialInstitucional/$(request.resource.data.lastCategoryEventId)).data.fromCategory == resource.data.category
         && getAfter(/databases/$(database)/documents/historialInstitucional/$(request.resource.data.lastCategoryEventId)).data.category == request.resource.data.category
         && getAfter(/databases/$(database)/documents/historialInstitucional/$(request.resource.data.lastCategoryEventId)).data.recordedBy == request.auth.uid;
+      // Retirement/readmission must commit an immutable matching event atomically.
+      allow update: if secretary()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status','category','retiredAt','rejoinedAt','updatedAt','updatedAtServer','lastLifecycleEventId'
+        ])
+        && request.resource.data.lastLifecycleEventId is string
+        && request.resource.data.lastLifecycleEventId.size() >= 10
+        && request.resource.data.updatedAt is string
+        && request.resource.data.updatedAt.size() == 10
+        && request.resource.data.updatedAtServer == request.time
+        && (
+          (resource.data.status == 'vigente'
+            && request.resource.data.status == 'retirado'
+            && request.resource.data.category == resource.data.category
+            && request.resource.data.retiredAt == request.resource.data.updatedAt
+            && request.resource.data.rejoinedAt == resource.data.rejoinedAt)
+          ||
+          (resource.data.status == 'retirado'
+            && request.resource.data.status == 'vigente'
+            && request.resource.data.category == 'reingresante'
+            && request.resource.data.rejoinedAt == request.resource.data.updatedAt
+            && request.resource.data.retiredAt == resource.data.retiredAt)
+        )
+        && getAfter(/databases/$(database)/documents/historialInstitucional/$(request.resource.data.lastLifecycleEventId)).data.hermanoId == memberId
+        && getAfter(/databases/$(database)/documents/historialInstitucional/$(request.resource.data.lastLifecycleEventId)).data.fromStatus == resource.data.status
+        && getAfter(/databases/$(database)/documents/historialInstitucional/$(request.resource.data.lastLifecycleEventId)).data.status == request.resource.data.status
+        && getAfter(/databases/$(database)/documents/historialInstitucional/$(request.resource.data.lastLifecycleEventId)).data.fromCategory == resource.data.category
+        && getAfter(/databases/$(database)/documents/historialInstitucional/$(request.resource.data.lastLifecycleEventId)).data.category == request.resource.data.category
+        && getAfter(/databases/$(database)/documents/historialInstitucional/$(request.resource.data.lastLifecycleEventId)).data.recordedBy == request.auth.uid;
       allow delete: if false;
     }
 
@@ -239,6 +268,43 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.resource.data.date
         && request.resource.data.createdAtServer == request.time
         && getAfter(/databases/$(database)/documents/hermanos/$(request.resource.data.hermanoId)).data.lastCategoryEventId == eventId
+        && getAfter(/databases/$(database)/documents/hermanos/$(request.resource.data.hermanoId)).data.category == request.resource.data.category;
+      allow create: if secretary()
+        && request.resource.data.keys().hasOnly([
+          'hermanoId','type','fromStatus','status','fromCategory','category',
+          'date','reason','recordedBy','createdAt','createdAtServer'
+        ])
+        && request.resource.data.keys().hasAll([
+          'hermanoId','type','fromStatus','status','fromCategory','category',
+          'date','reason','recordedBy','createdAt','createdAtServer'
+        ])
+        && request.resource.data.hermanoId is string
+        && request.resource.data.type in ['retiro','reingreso']
+        && request.resource.data.fromStatus in ['vigente','retirado']
+        && request.resource.data.status in ['vigente','retirado']
+        && (
+          (request.resource.data.type == 'retiro'
+            && request.resource.data.fromStatus == 'vigente'
+            && request.resource.data.status == 'retirado'
+            && request.resource.data.category == request.resource.data.fromCategory)
+          ||
+          (request.resource.data.type == 'reingreso'
+            && request.resource.data.fromStatus == 'retirado'
+            && request.resource.data.status == 'vigente'
+            && request.resource.data.category == 'reingresante')
+        )
+        && request.resource.data.fromCategory in ['postulante','reingresante','activo','vitalicio']
+        && request.resource.data.category in ['postulante','reingresante','activo','vitalicio']
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() >= 10
+        && request.resource.data.reason.size() <= 500
+        && request.resource.data.recordedBy == request.auth.uid
+        && request.resource.data.date is string
+        && request.resource.data.date.size() == 10
+        && request.resource.data.createdAt == request.resource.data.date
+        && request.resource.data.createdAtServer == request.time
+        && getAfter(/databases/$(database)/documents/hermanos/$(request.resource.data.hermanoId)).data.lastLifecycleEventId == eventId
+        && getAfter(/databases/$(database)/documents/hermanos/$(request.resource.data.hermanoId)).data.status == request.resource.data.status
         && getAfter(/databases/$(database)/documents/hermanos/$(request.resource.data.hermanoId)).data.category == request.resource.data.category;
       allow update, delete: if false;
     }
