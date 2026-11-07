@@ -20,7 +20,8 @@ service cloud.firestore {
 
     match /usuarios/{uid} {
       allow get: if authorized() && request.auth.uid == uid;
-      allow list, create, update, delete: if false;
+      allow list: if president();
+      allow create, update, delete: if false;
     }
 
     match /hermanos/{memberId} {
