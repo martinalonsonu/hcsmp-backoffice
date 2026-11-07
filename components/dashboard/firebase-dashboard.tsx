@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { LayoutDashboard, UsersRound, ChartNoAxesCombined, ClipboardList, Wallet, UserRound, LogOut, Menu, X, PanelLeftClose, PanelLeftOpen, CircleHelp, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, UsersRound, ChartNoAxesCombined, ClipboardList, Wallet, UserRound, LogOut, Menu, X, PanelLeftClose, PanelLeftOpen, CircleHelp, ShieldCheck, Pencil, ArrowLeftRight, UserMinus, UserPlus, LockKeyhole, LockKeyholeOpen, LoaderCircle } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { logoutFirebase, observePortalIdentity, type PortalIdentity } from "@/lib/firebase/auth";
 import { readMyMember, readRoster, readRequests, readAccountMovements, readAllMovements, readUserDirectory } from "@/lib/firebase/queries";
@@ -53,6 +53,7 @@ export function FirebaseDashboard() {
     category:"activo" as Category, sacraments:[] as string[], guardian:null as Guardian | null,
   });
   const [accountBusy, setAccountBusy] = useState(false);
+  const [busyAccountId, setBusyAccountId] = useState<string | null>(null);
   const [accountMessage, setAccountMessage] = useState("");
   const [requestTitle, setRequestTitle] = useState("");
   const [requestContent, setRequestContent] = useState("");
@@ -144,10 +145,10 @@ export function FirebaseDashboard() {
 
   async function changeAccount(uid:string, changes:{role?:UserRecord["role"];activo?:boolean}) {
     if (!identity || accountBusy) return;
-    setAccountBusy(true);setAccountMessage("");
+    setAccountBusy(true);setBusyAccountId(uid);setAccountMessage("");
     try { await updateAccountAccess(identity,uid,changes);setReload((value)=>value+1); }
     catch(cause){setAccountMessage(cause instanceof Error?cause.message:"No se pudo actualizar la cuenta.");}
-    finally{setAccountBusy(false);}
+    finally{setAccountBusy(false);setBusyAccountId(null);}
   }
 
   async function saveMember(event: React.FormEvent<HTMLFormElement>) {
@@ -303,7 +304,9 @@ export function FirebaseDashboard() {
           <h1 className="mt-3 font-display text-3xl">Portal de Gestión Interna</h1>
           {identity && <p className="mt-2 text-sm text-muted">{identity.user.username} · {role}</p>}
         </header>
-        {loading && <p role="status">Cargando información institucional…</p>}
+        {loading && <div role="status" aria-live="polite" className="flex items-center gap-3 rounded-sm border border-line bg-white-warm p-4 text-sm text-muted">
+          <LoaderCircle aria-hidden="true" className="size-5 animate-spin"/> Cargando información institucional…
+        </div>}
         {error && <p role="alert" className="text-red-700">{error}</p>}
         {!loading && !data && !error && <p>Inicia sesión para acceder al portal.</p>}
         {data && !allowed && <p role="alert">No tienes acceso a este módulo.</p>}
@@ -334,15 +337,21 @@ export function FirebaseDashboard() {
             <tbody>{visible.map((member) => <tr key={member.id} className="border-t border-line">
               <td className="p-3">{member.fullName}</td><td className="p-3">{member.category}</td>
               <td className="p-3">{member.status}</td><td className="p-3">
-                <button type="button" className="underline" onClick={() => openMember(member)}>Editar ficha</button>
-                {role === "secretaria" && member.status === "vigente" && <button type="button" className="ml-3 underline"
-                  onClick={() => { setCategoryTarget(member); setNextCategory(member.category); setCategoryReason(""); setMemberMessage(""); }}>
-                  Cambiar categoría
-                </button>}
-                {role === "secretaria" && <button type="button" className="ml-3 underline"
-                  onClick={() => { setLifecycleTarget(member); setLifecycleReason(""); setMemberMessage(""); }}>
-                  {member.status === "vigente" ? "Registrar retiro" : "Registrar reingreso"}
-                </button>}
+                <div className="flex items-center gap-1">
+                  <ActionIcon label={`Editar ficha de ${member.fullName}`} onClick={() => openMember(member)}>
+                    <Pencil className="size-4"/>
+                  </ActionIcon>
+                  {role === "secretaria" && member.status === "vigente" && <ActionIcon
+                    label={`Cambiar categoría de ${member.fullName}`}
+                    onClick={() => { setCategoryTarget(member); setNextCategory(member.category); setCategoryReason(""); setMemberMessage(""); }}>
+                    <ArrowLeftRight className="size-4"/>
+                  </ActionIcon>}
+                  {role === "secretaria" && <ActionIcon
+                    label={`${member.status === "vigente" ? "Registrar retiro" : "Registrar reingreso"} de ${member.fullName}`}
+                    onClick={() => { setLifecycleTarget(member); setLifecycleReason(""); setMemberMessage(""); }}>
+                    {member.status === "vigente" ? <UserMinus className="size-4"/> : <UserPlus className="size-4"/>}
+                  </ActionIcon>}
+                </div>
               </td></tr>)}</tbody>
           </table></div>
         </section>}
@@ -366,10 +375,11 @@ export function FirebaseDashboard() {
                     <option key={item} value={item}>{item}</option>)}
                 </select> : user.role}</td>
               <td className="p-3">{role==="secretaria" && user.id!==identity?.uid ?
-                <button type="button" disabled={accountBusy} className="underline"
+                <ActionIcon disabled={accountBusy} label={`${user.activo?"Deshabilitar":"Habilitar"} acceso de ${user.username}`}
                   onClick={()=>void changeAccount(user.id,{activo:!user.activo})}>
-                  {user.activo?"Deshabilitar":"Habilitar"}
-                </button> : user.activo?"Habilitado":"Deshabilitado"}</td>
+                  {busyAccountId===user.id ? <LoaderCircle className="size-4 animate-spin"/> :
+                    user.activo?<LockKeyhole className="size-4"/>:<LockKeyholeOpen className="size-4"/>}
+                </ActionIcon> : user.activo?"Habilitado":"Deshabilitado"}</td>
             </tr>)}</tbody>
           </table></div>
           <h3 className="font-semibold">Hermanos sin cuenta vinculada</h3>
@@ -390,7 +400,7 @@ export function FirebaseDashboard() {
                 rows={5} value={requestContent} onChange={(event) => setRequestContent(event.target.value)} /></label>
             <button type="submit" disabled={requestBusy}
               className="rounded-sm bg-forest px-4 py-2 text-white disabled:opacity-50">
-              {requestBusy ? "Guardando…" : "Enviar solicitud"}</button>
+              {requestBusy ? <><LoaderCircle className="inline size-4 animate-spin"/> Guardando…</> : "Enviar solicitud"}</button>
           </form>}
           {data.requests.length === 0 ? <p>No hay solicitudes registradas.</p> :
             data.requests.map((request) => <article key={request.id} className="space-y-3 rounded-sm border border-line p-4">
@@ -451,7 +461,7 @@ export function FirebaseDashboard() {
               onClick={() => setLifecycleTarget(null)}>Cancelar</button>
             <button type="submit" disabled={memberBusy}
               className="rounded-sm bg-forest px-4 py-2 text-white disabled:opacity-50">
-              {memberBusy ? "Guardando…" : "Confirmar"}
+              {memberBusy ? <><LoaderCircle className="inline size-4 animate-spin"/> Guardando…</> : "Confirmar"}
             </button>
           </div>
         </form>
@@ -580,7 +590,7 @@ export function FirebaseDashboard() {
             <div className="flex flex-wrap justify-end gap-3 border-t border-line pt-5">
               <button type="button" disabled={memberBusy} onClick={() => setMemberFormOpen(false)} className="rounded-sm border border-line px-5 py-3">Cancelar</button>
               <button type="submit" disabled={memberBusy} className="rounded-sm bg-forest px-5 py-3 text-white disabled:opacity-50">
-                {memberBusy ? "Guardando…" : editingMember ? "Guardar contacto" : "Registrar hermano"}
+                {memberBusy ? <><LoaderCircle className="inline size-4 animate-spin"/> Guardando…</> : editingMember ? "Guardar contacto" : "Registrar hermano"}
               </button>
             </div>
           </form>
@@ -596,4 +606,16 @@ function Metric({label,value}:{label:string;value:string}) {
   return <div className="rounded-sm border border-line bg-white-warm p-5">
     <p className="text-sm text-muted">{label}</p><p className="mt-2 text-2xl font-semibold">{value}</p>
   </div>;
+}
+
+function ActionIcon({label,onClick,disabled=false,children}:{label:string;onClick:()=>void;disabled?:boolean;children:React.ReactNode}) {
+  return <span className="group relative inline-flex">
+    <button type="button" aria-label={label} title={label} disabled={disabled} onClick={onClick}
+      className="inline-flex size-9 items-center justify-center rounded-sm border border-line text-ink transition-colors hover:bg-mist focus-visible:ring-2 focus-visible:ring-clay disabled:opacity-40">
+      {children}
+    </button>
+    <span role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-max max-w-56 -translate-x-1/2 rounded-sm bg-ink px-2 py-1 text-center text-xs text-paper shadow-md group-hover:block group-focus-within:block">
+      {label}
+    </span>
+  </span>;
 }
