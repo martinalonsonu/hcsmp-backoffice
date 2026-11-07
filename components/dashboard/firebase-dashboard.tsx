@@ -10,6 +10,7 @@ import type { MemberRecord, MovementRecord, RequestRecord, UserRecord } from "@/
 import { HcsmpBrand } from "@/components/brand/hcsmp-brand";
 import { createInstitutionalMember, updateInstitutionalMemberContact, changeMemberCategory, changeMemberLifecycle } from "@/lib/firebase/members";
 import {updateAccountAccess} from "@/lib/firebase/user-access";
+import {createMemberAccount} from "@/lib/firebase/account-provisioning";
 import type { Category, Guardian } from "@/lib/portal";
 import { submitInstitutionalRequest, setInstitutionalRequestStatus } from "@/lib/firebase/requests";
 import type { RequestStatus } from "@/lib/portal";
@@ -55,6 +56,10 @@ export function FirebaseDashboard() {
   const [accountBusy, setAccountBusy] = useState(false);
   const [busyAccountId, setBusyAccountId] = useState<string | null>(null);
   const [accountMessage, setAccountMessage] = useState("");
+  const [newAccountMemberId, setNewAccountMemberId] = useState("");
+  const [newAccountUsername, setNewAccountUsername] = useState("");
+  const [newAccountRole, setNewAccountRole] = useState<UserRecord["role"]>("estandar");
+  const [createdCredentials, setCreatedCredentials] = useState<{username:string;password:string}|null>(null);
   const [requestTitle, setRequestTitle] = useState("");
   const [requestContent, setRequestContent] = useState("");
   const [requestBusy, setRequestBusy] = useState(false);
@@ -141,6 +146,21 @@ export function FirebaseDashboard() {
     } catch (cause) {
       setRequestMessage(cause instanceof Error ? cause.message : "No se pudo actualizar la solicitud.");
     } finally { setRequestBusy(false); }
+  }
+
+  async function submitNewAccount(event:React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if(!identity || !newAccountMemberId || accountBusy)return;
+    setAccountBusy(true);setAccountMessage("");setCreatedCredentials(null);
+    try {
+      const credentials=await createMemberAccount(identity,{memberId:newAccountMemberId,
+        username:newAccountUsername,role:newAccountRole});
+      setCreatedCredentials(credentials);
+      setNewAccountMemberId("");setNewAccountUsername("");setNewAccountRole("estandar");
+      setReload(value=>value+1);
+    }catch(cause){
+      setAccountMessage(cause instanceof Error?cause.message:"No se pudo crear la cuenta.");
+    }finally{setAccountBusy(false);}
   }
 
   async function changeAccount(uid:string, changes:{role?:UserRecord["role"];activo?:boolean}) {
@@ -359,8 +379,50 @@ export function FirebaseDashboard() {
           <h2 className="font-display text-2xl">Usuarios y accesos</h2>
           <p className="text-sm text-muted">Las cuentas se vinculan con las fichas institucionales por hermanoId.
             Secretaría administra roles y accesos; Presidencia consulta.</p>
-          <p className="text-sm text-muted">Crear credenciales de Firebase Authentication requiere un proceso administrativo seguro.
-            No se crean cuentas de acceso escribiendo solamente documentos en Firestore.</p>
+          {role==="secretaria" && <form onSubmit={event=>void submitNewAccount(event)}
+            className="space-y-3 rounded-sm border border-line bg-white-warm p-5">
+            <h3 className="font-semibold">Crear cuenta para un hermano registrado</h3>
+            <label className="block space-y-1 text-sm"><span>Hermano sin cuenta</span>
+              <select required className="w-full rounded-sm border border-line p-3" value={newAccountMemberId}
+                onChange={event=>{const id=event.target.value;setNewAccountMemberId(id);
+                  const member=data.roster.find(item=>item.id===id);
+                  setNewAccountUsername(member?member.fullName.normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+                    .toLowerCase().replace(/[^a-z\s]/g," ").trim().split(/\s+/).filter(Boolean)
+                    .filter((_,index,array)=>index===0||index===array.length-1).join("."):"");}}>
+                <option value="">Selecciona un hermano</option>
+                {data.roster.filter(member=>member.status==="vigente" &&
+                  !data.users.some(user=>user.hermanoId===member.id)).map(member=>
+                  <option key={member.id} value={member.id}>{member.fullName}</option>)}
+              </select>
+            </label>
+            <label className="block space-y-1 text-sm"><span>Nombre de usuario</span>
+              <input required pattern="[a-z0-9]+([._-][a-z0-9]+)*" maxLength={64}
+                className="w-full rounded-sm border border-line p-3" value={newAccountUsername}
+                onChange={event=>setNewAccountUsername(event.target.value.toLowerCase())}/>
+            </label>
+            <label className="block space-y-1 text-sm"><span>Rol institucional</span>
+              <select className="w-full rounded-sm border border-line p-3" value={newAccountRole}
+                onChange={event=>setNewAccountRole(event.target.value as UserRecord["role"])}>
+                {(["estandar","tesoreria","secretaria","presidencia"] as const).map(item=>
+                  <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+            <p className="text-xs text-muted">Se generará una contraseña temporal aleatoria. Entrégala por un canal seguro.</p>
+            <button type="submit" disabled={accountBusy || !newAccountMemberId}
+              className="inline-flex items-center gap-2 rounded-sm bg-forest px-4 py-2 text-white disabled:opacity-50">
+              {accountBusy&&<LoaderCircle className="size-4 animate-spin"/>} Crear cuenta
+            </button>
+          </form>}
+          {createdCredentials&&role==="secretaria"&&<div role="status" className="space-y-2 rounded-sm border border-line bg-white-warm p-4">
+            <p className="font-semibold">Cuenta creada. Copia las credenciales antes de salir.</p>
+            <p>Usuario: <strong>{createdCredentials.username}</strong></p>
+            <p>Contraseña temporal: <code className="break-all">{createdCredentials.password}</code></p>
+            <button type="button" className="rounded-sm border border-line px-3 py-2"
+              onClick={()=>void navigator.clipboard.writeText(`Usuario: ${createdCredentials.username}\\nContraseña temporal: ${createdCredentials.password}`)}>
+              Copiar credenciales
+            </button>
+            <button type="button" className="ml-2 underline" onClick={()=>setCreatedCredentials(null)}>Ocultar</button>
+          </div>}
           {accountMessage && <p role="alert" className="text-sm text-red-700">{accountMessage}</p>}
           <div className="overflow-x-auto rounded-sm border border-line"><table className="w-full text-left text-sm">
             <thead><tr className="bg-mist"><th className="p-3">Usuario</th><th className="p-3">Hermano vinculado</th>
