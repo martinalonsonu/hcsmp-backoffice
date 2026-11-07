@@ -386,8 +386,8 @@ export function FirebaseDashboard() {
               <select required className="w-full rounded-sm border border-line p-3" value={newAccountMemberId}
                 onChange={event=>{const id=event.target.value;setNewAccountMemberId(id);
                   const member=data.roster.find(item=>item.id===id);
-                  setNewAccountUsername(member?member.fullName.normalize("NFD").replace(/[\\u0300-\\u036f]/g,"")
-                    .toLowerCase().replace(/[^a-z\\s]/g," ").trim().split(/\\s+/).filter(Boolean)
+                  setNewAccountUsername(member?member.fullName.normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+                    .toLowerCase().replace(/[^a-z\s]/g," ").trim().split(/\s+/).filter(Boolean)
                     .filter((_,index,array)=>index===0||index===array.length-1).join("."):"");}}>
                 <option value="">Selecciona un hermano</option>
                 {data.roster.filter(member=>member.status==="vigente" &&
