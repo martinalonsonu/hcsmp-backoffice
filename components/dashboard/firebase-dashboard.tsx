@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { LayoutDashboard, UsersRound, ChartNoAxesCombined, ClipboardList, Wallet, UserRound, LogOut, Menu, X, PanelLeftClose, PanelLeftOpen, CircleHelp, ShieldCheck } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { logoutFirebase, observePortalIdentity, type PortalIdentity } from "@/lib/firebase/auth";
 import { readMyMember, readRoster, readRequests, readAccountMovements, readAllMovements, readUserDirectory } from "@/lib/firebase/queries";
@@ -22,6 +23,16 @@ export function FirebaseDashboard() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const view = searchParams.get("view") || "summary";
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const mobileMenuRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = mobileMenuRef.current;
+    if (!dialog) return;
+    if (isMobileMenuOpen && !dialog.open) dialog.showModal();
+    if (!isMobileMenuOpen && dialog.open) dialog.close();
+  }, [isMobileMenuOpen]);
+  useEffect(() => { setIsMobileMenuOpen(false); }, [view]);
   const [identity, setIdentity] = useState<PortalIdentity | null>(null);
   const [data, setData] = useState<Snapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -205,17 +216,87 @@ export function FirebaseDashboard() {
     catch (cause) { setError(cause instanceof Error ? cause.message : "No se pudo cerrar sesión."); }
   }
 
+  const navIcons = {summary:LayoutDashboard,members:UsersRound,treasury:ChartNoAxesCombined,users:ShieldCheck,requests:ClipboardList,account:Wallet,profile:UserRound};
+  const navItems = items.map(item=>({...item,Icon:navIcons[item.view as keyof typeof navIcons] ?? LayoutDashboard}));
+  const navLink = (item:typeof navItems[number],mobile=false) => (
+    <Link key={item.view} href={item.view==="summary"?"/dashboard":`/dashboard?view=${item.view}`}
+      aria-current={view===item.view?"page":undefined} aria-label={item.label}
+      title={!mobile&&isCollapsed?item.label:undefined}
+      onClick={mobile?()=>setIsMobileMenuOpen(false):undefined}
+      className={`flex min-h-11 items-center gap-3 rounded-sm px-3 text-sm transition-colors ${view===item.view?"bg-mist font-semibold text-ink":"text-muted hover:bg-mist/70 hover:text-ink"} ${!mobile&&isCollapsed?"lg:justify-center lg:px-0":""}`}>
+      <item.Icon aria-hidden="true" className="size-5 shrink-0" strokeWidth={1.8}/>
+      <span className={!mobile&&isCollapsed?"lg:sr-only":"truncate"}>{item.label}</span>
+    </Link>
+  );
+  const help = <div className="rounded-sm border border-line bg-paper p-3 text-xs text-muted">
+    <div className="flex items-center gap-2 font-semibold text-ink"><CircleHelp className="size-4"/>¿Necesitas ayuda?</div>
+    <p className="mt-2">Comunícate con la junta directiva para consultas sobre el portal.</p>
+  </div>;
   return (
-    <div className="min-h-screen bg-paper lg:grid lg:grid-cols-[16rem_minmax(0,1fr)]">
-      <aside className="border-b border-line bg-white-warm p-5 lg:min-h-screen lg:border-b-0 lg:border-r">
-        <Link href="/dashboard"><HcsmpBrand iconOnly /></Link>
-        <nav aria-label="Navegación principal" className="mt-8 flex flex-wrap gap-2 lg:flex-col">
-          {items.map((item) => <Link key={item.view} href={item.view === "summary" ? "/dashboard" : `/dashboard?view=${item.view}`}
-            aria-current={view === item.view ? "page" : undefined}
-            className={`rounded-sm px-3 py-2 text-sm ${view === item.view ? "bg-mist font-semibold" : "hover:bg-mist/70"}`}>{item.label}</Link>)}
+    <div className={`min-h-screen bg-paper lg:grid ${isCollapsed?"lg:grid-cols-[5rem_minmax(0,1fr)]":"lg:grid-cols-[16rem_minmax(0,1fr)]"}`}>
+      <aside className="hidden border-r border-line bg-white-warm lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
+        <div className={`flex items-center justify-between p-5 ${isCollapsed?"lg:justify-center":""}`}>
+          {!isCollapsed&&<Link href="/dashboard" aria-label="HCSMP, ir al resumen"><HcsmpBrand iconOnly/></Link>}
+          <button type="button" aria-label={isCollapsed?"Expandir menú":"Contraer menú"}
+            aria-expanded={!isCollapsed} aria-controls="firebase-dashboard-navigation"
+            onClick={()=>setIsCollapsed(v=>!v)} className="grid size-10 place-items-center rounded-sm hover:bg-mist">
+            {isCollapsed?<PanelLeftOpen className="size-5"/>:<PanelLeftClose className="size-5"/>}
+          </button>
+        </div>
+        <nav id="firebase-dashboard-navigation" aria-label="Navegación principal" className="space-y-1 px-3 py-4">
+          {!isCollapsed&&<p className="px-3 pb-2 text-xs font-semibold uppercase tracking-widest text-muted">Espacio de trabajo</p>}
+          {navItems.map(item=>navLink(item))}
         </nav>
-        <button className="mt-8 rounded-sm border border-line px-3 py-2 text-sm" onClick={() => void signOut()}>Cerrar sesión</button>
+        <div className="mt-auto space-y-3 p-3">
+          {!isCollapsed&&help}
+          <button type="button" onClick={()=>void signOut()} title="Cerrar sesión" aria-label="Cerrar sesión"
+            className={`flex w-full items-center gap-3 rounded-sm p-3 text-sm hover:bg-mist ${isCollapsed?"justify-center":""}`}>
+            <LogOut className="size-5"/>{!isCollapsed&&"Cerrar sesión"}
+          </button>
+        </div>
       </aside>
+      <dialog ref={mobileMenuRef} id="firebase-mobile-navigation" aria-label="Menú de navegación"
+        onCancel={e=>{e.preventDefault();setIsMobileMenuOpen(false);}}
+        onClick={e=>{if(e.target===e.currentTarget)setIsMobileMenuOpen(false);}}
+        className="fixed inset-0 m-0 h-dvh max-h-none w-screen max-w-none border-0 bg-transparent p-0 backdrop:bg-ink/50 lg:hidden">
+        <div className="flex h-full">
+          <aside className="flex h-full w-[min(18rem,85vw)] flex-col border-r border-line bg-white-warm shadow-xl">
+            <div className="flex items-center justify-between border-b border-line p-5">
+              <Link href="/dashboard" onClick={()=>setIsMobileMenuOpen(false)} aria-label="HCSMP, ir al resumen"><HcsmpBrand iconOnly/></Link>
+              <button type="button" aria-label="Cerrar menú" onClick={()=>setIsMobileMenuOpen(false)} className="grid size-10 place-items-center"><X className="size-5"/></button>
+            </div>
+            <nav aria-label="Navegación móvil" className="flex-1 space-y-1 overflow-y-auto p-3">
+              <p className="px-3 pb-2 pt-3 text-xs font-semibold uppercase tracking-widest text-muted">Espacio de trabajo</p>
+              {navItems.map(item=>navLink(item,true))}
+            </nav>
+            <div className="space-y-3 border-t border-line p-4">{help}
+              <button type="button" onClick={()=>{setIsMobileMenuOpen(false);void signOut();}} className="flex items-center gap-3 p-2 text-sm">
+                <LogOut className="size-5"/>Cerrar sesión
+              </button>
+            </div>
+          </aside>
+          <div className="min-w-0 flex-1" aria-hidden="true"/>
+        </div>
+      </dialog>
+      <div className="min-w-0">
+        <header className="flex min-h-18 items-center justify-between border-b border-line bg-white-warm/80 px-5 sm:px-8 lg:px-10">
+          <div className="flex min-w-0 items-center gap-3">
+            <button type="button" aria-label="Abrir menú" aria-controls="firebase-mobile-navigation"
+              aria-expanded={isMobileMenuOpen} onClick={()=>setIsMobileMenuOpen(true)}
+              className="grid size-10 place-items-center rounded-sm hover:bg-mist lg:hidden"><Menu className="size-5"/></button>
+            <p className="truncate text-xs text-muted sm:text-sm"><span className="sm:hidden">Portal HCSMP</span>
+              <span className="hidden sm:inline">Hermandad de Cargadores de San Martín de Porres</span></p>
+          </div>
+          <div className="flex items-center gap-3">
+            {data&&<span className="hidden text-right sm:block">
+              <span className="block text-xs font-semibold">{data.member.fullName}</span>
+              <span className="block text-xs text-muted">{role} · {data.member.category}</span>
+            </span>}
+            {data&&<span role="img" aria-label={data.member.fullName} className="grid size-9 place-items-center rounded-full bg-ink text-xs font-semibold text-paper">
+              {data.member.fullName.split(" ").slice(0,2).map(word=>word[0]).join("")}
+            </span>}
+          </div>
+        </header>
       <main className="min-w-0 space-y-7 px-5 py-10 sm:px-8 lg:px-12">
         <header className="border-b border-line pb-6">
           <p className="eyebrow">Hermandad de Cargadores de San Martín de Porres</p>
@@ -506,6 +587,7 @@ export function FirebaseDashboard() {
           </div>
           </div>}
 
+      </div>
     </div>
   );
 }
