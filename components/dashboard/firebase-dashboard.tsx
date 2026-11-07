@@ -8,7 +8,7 @@ import { readMyMember, readRoster, readRequests, readAccountMovements, readAllMo
 import type { MemberRecord, MovementRecord, RequestRecord, UserRecord } from "@/lib/firebase/models";
 import { HcsmpBrand } from "@/components/brand/hcsmp-brand";
 import { createInstitutionalMember, updateInstitutionalMemberContact } from "@/lib/firebase/members";
-import type { Category } from "@/lib/portal";
+import type { Category, Guardian } from "@/lib/portal";
 import { submitInstitutionalRequest, setInstitutionalRequestStatus } from "@/lib/firebase/requests";
 import type { RequestStatus } from "@/lib/portal";
 
@@ -33,7 +33,7 @@ export function FirebaseDashboard() {
   const [memberDraft, setMemberDraft] = useState({
     fullName:"",dni:"",birthDate:"",address:"",phone:"",email:"",
     occupation:"",maritalStatus:"",joinedAt:"",swornAt:"",
-    category:"activo" as Category, sacraments:[] as string[],
+    category:"activo" as Category, sacraments:[] as string[], guardian:null as Guardian | null,
   });
   const [requestTitle, setRequestTitle] = useState("");
   const [requestContent, setRequestContent] = useState("");
@@ -148,11 +148,11 @@ export function FirebaseDashboard() {
       address:member.address ?? "", phone:member.phone ?? "", email:member.email ?? "",
       occupation:member.occupation ?? "", maritalStatus:member.maritalStatus ?? "",
       joinedAt:member.joinedAt ?? "", swornAt:member.swornAt ?? "",
-      category:member.category, sacraments:member.sacraments ?? [],
+      category:member.category, sacraments:member.sacraments ?? [], guardian:member.guardian ?? null,
     } : {
       fullName:"",dni:"",birthDate:"",address:"",phone:"",email:"",
       occupation:"",maritalStatus:"",joinedAt:"",swornAt:"",
-      category:"activo",sacraments:[],
+      category:"activo",sacraments:[],guardian:null,
     });
     setMemberFormOpen(true);
   }
@@ -314,6 +314,65 @@ export function FirebaseDashboard() {
                 </select>
               </label>
             </div>
+            {!editingMember && <>
+              <section className="space-y-3 border-t border-line pt-6">
+                <h3 className="font-semibold">Vida sacramental</h3>
+                <p className="text-sm text-muted">Selecciona los sacramentos recibidos.</p>
+                <div className="flex flex-wrap gap-4">
+                  {["Bautismo","Primera Comunión","Confirmación","Matrimonio"].map((sacrament) =>
+                    <label key={sacrament} className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={memberDraft.sacraments.includes(sacrament)}
+                        onChange={(event) => setMemberDraft((current) => ({
+                          ...current, sacraments:event.target.checked
+                            ? [...current.sacraments,sacrament]
+                            : current.sacraments.filter((item) => item !== sacrament),
+                        }))}/>{sacrament}
+                    </label>)}
+                </div>
+              </section>
+              <section className="space-y-3 border-t border-line pt-6">
+                <label className="flex items-center gap-3 font-semibold">
+                  <input type="checkbox" checked={memberDraft.guardian !== null}
+                    onChange={(event) => setMemberDraft((current) => ({
+                      ...current, guardian:event.target.checked
+                        ? {fullName:"",dni:"",education:"",address:"",phone:"",relationship:"",age:"",sacraments:[]}
+                        : null,
+                    }))}/>
+                  Registrar padre, madre o apoderado
+                </label>
+                {memberDraft.guardian && <div className="grid gap-4 sm:grid-cols-2">
+                  {([
+                    ["fullName","Nombres y apellidos"],["dni","DNI"],["relationship","Parentesco"],
+                    ["age","Edad"],["education","Grado de instrucción"],
+                    ["address","Dirección"],["phone","Teléfono"],
+                  ] as const).map(([key,label]) => <label key={key} className="space-y-2 text-sm">
+                    <span className="block">{label}</span>
+                    <input className="w-full rounded-sm border border-line bg-white p-3"
+                      required={key === "fullName"} value={memberDraft.guardian?.[key] ?? ""}
+                      onChange={(event) => setMemberDraft((current) => ({
+                        ...current, guardian:current.guardian
+                          ? {...current.guardian,[key]:event.target.value} : null,
+                      }))}/>
+                  </label>)}
+                  <fieldset className="space-y-2 sm:col-span-2">
+                    <legend className="text-sm">Sacramentos del apoderado</legend>
+                    <div className="flex flex-wrap gap-4">
+                      {["Bautismo","Primera Comunión","Confirmación","Matrimonio"].map((sacrament) =>
+                        <label key={sacrament} className="flex items-center gap-2 text-sm">
+                          <input type="checkbox" checked={memberDraft.guardian?.sacraments.includes(sacrament) ?? false}
+                            onChange={(event) => setMemberDraft((current) => ({
+                              ...current, guardian:current.guardian
+                                ? {...current.guardian,sacraments:event.target.checked
+                                    ? [...current.guardian.sacraments,sacrament]
+                                    : current.guardian.sacraments.filter((item) => item !== sacrament)}
+                                : null,
+                            }))}/>{sacrament}
+                        </label>)}
+                    </div>
+                  </fieldset>
+                </div>}
+              </section>
+            </>}
             {memberMessage && <p role="alert" className="text-sm text-red-700">{memberMessage}</p>}
             <div className="flex flex-wrap justify-end gap-3 border-t border-line pt-5">
               <button type="button" disabled={memberBusy} onClick={() => setMemberFormOpen(false)} className="rounded-sm border border-line px-5 py-3">Cancelar</button>
