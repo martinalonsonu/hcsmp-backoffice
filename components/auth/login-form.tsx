@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { usePortal } from "@/components/portal/portal-provider";
+import { loginWithUsername } from "@/lib/firebase/auth";
 
 function LoginForm() {
   const router = useRouter();
@@ -14,7 +14,7 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
-  const { login, ready, error } = usePortal();
+
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -22,8 +22,8 @@ function LoginForm() {
     setPending(true);
     setMessage("");
     try {
-      await login(username, password);
-      router.push("/dashboard");
+      await loginWithUsername(username, password);
+      router.push("/firebase-workspace");
     } catch (failure) {
       setMessage(
         failure instanceof Error
@@ -85,53 +85,19 @@ function LoginForm() {
           </button>
         </div>
       </div>
-      {(message || error) && (
+      {message && (
         <p role="alert" className="text-sm text-red-700">
-          {message || error}
+          {message}
         </p>
       )}
-      <Button className="w-full" type="submit" disabled={pending || !ready}>
+      <Button className="w-full" type="submit" disabled={pending}>
         {pending ? "Ingresando…" : "Iniciar sesión"}
         <ArrowRight aria-hidden="true" className="size-4" />
       </Button>
-      <fieldset className="rounded-sm border border-line bg-white/60 p-4">
-        <legend className="px-1 text-xs font-semibold text-clay-text">
-          Probar un perfil
-        </legend>
-        <p className="mb-3 text-xs leading-5 text-muted">
-          Demostración sin backend. Contraseña de las cuentas de ejemplo:{" "}
-          <span className="font-mono text-ink">Demo2026!</span>
-        </p>
-        <div className="grid grid-cols-2 gap-2">
-          {(
-            [
-              ["secretaria", "Secretaría"],
-              ["tesoreria", "Tesorería"],
-              ["presidencia", "Presidencia"],
-              ["hermano", "Estándar"],
-            ] as const
-          ).map(([user, label]) => (
-            <Button
-              type="button"
-              key={user}
-              variant="outline"
-              size="sm"
-              disabled={pending || !ready}
-              onClick={() => {
-                setUsername(user);
-                setPassword("Demo2026!");
-                setMessage("");
-              }}
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
-        <p className="mt-3 text-xs leading-5 text-muted">
-          Los hermanos nuevos ingresan con las credenciales generadas al
-          registrar su ficha. Usa únicamente datos de prueba.
-        </p>
-      </fieldset>
+      <p className="text-xs leading-5 text-muted">
+        Acceso institucional mediante Firebase. Las cuentas de demostración
+        ya no están disponibles en este formulario.
+      </p>
     </form>
   );
 }
