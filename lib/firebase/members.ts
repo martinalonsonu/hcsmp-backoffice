@@ -1,4 +1,4 @@
-import { addDoc, collection, doc, serverTimestamp, updateDoc, setDoc } from "firebase/firestore";
+import { addDoc, collection, doc, serverTimestamp, updateDoc, runTransaction } from "firebase/firestore";
 import { getFirebaseServices } from "./client";
 import type { PortalIdentity } from "./auth";
 import type { MemberRecord } from "./models";
@@ -33,7 +33,12 @@ export async function createInstitutionalMember(identity: PortalIdentity, input:
   };
   if (dni) {
     // Deterministic ID plus create-only Security Rule prevents concurrent duplicates.
-    await setDoc(doc(db, "hermanos", `dni-${dni}`), payload);
+    const memberRef = doc(db, "hermanos", `dni-${dni}`);
+    await runTransaction(db, async (transaction) => {
+      const existing = await transaction.get(memberRef);
+      if (existing.exists()) throw new Error("Ya existe un hermano registrado con ese DNI.");
+      transaction.set(memberRef, payload);
+    });
   } else {
     await addDoc(collection(db, "hermanos"), payload);
   }
