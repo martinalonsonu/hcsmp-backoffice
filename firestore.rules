@@ -40,8 +40,86 @@ service cloud.firestore {
     match /solicitudes/{requestId} {
       allow get, list: if secretary()
         || (authorized() && resource.data.requesterId == myId());
-      // Pending validated write rules; never trust a client-provided status.
+      // Members submit only their own new requests; Secretary manages status only.
+      allow create: if authorized()
+        && !secretary()
+        && request.resource.data.keys().hasOnly([
+          'requesterId', 'title', 'content', 'status', 'submittedAt',
+          'updatedAt', 'createdAtServer', 'updatedAtServer'
+        ])
+        && request.resource.data.keys().hasAll([
+          'requesterId', 'title', 'content', 'status', 'submittedAt',
+          'updatedAt', 'createdAtServer', 'updatedAtServer'
+        ])
+        && request.resource.data.requesterId == myId()
+        && request.resource.data.status == 'enviada'
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 5
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.content is string
+        && request.resource.data.content.size() >= 10
+        && request.resource.data.content.size() <= 5000
+        && request.resource.data.submittedAt is string
+        && request.resource.data.submittedAt.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}
+    }
+
+    match /historialInstitucional/{eventId} {
+      allow get, list: if rosterReader();
       allow create, update, delete: if false;
+    }
+
+    match /configuracionEconomica/{documentId} {
+      allow get, list: if treasurer() || president();
+      allow create, update, delete: if false;
+    }
+
+    match /configuracion/{configId} {
+      allow get, list: if secretary() || president();
+      allow create, update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+)
+        && request.resource.data.updatedAt == request.resource.data.submittedAt
+        && request.resource.data.createdAtServer == request.time
+        && request.resource.data.updatedAtServer == request.time;
+      allow update: if secretary()
+        && resource.data.status in ['enviada', 'en_revision', 'derivada']
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'updatedAt', 'updatedAtServer'])
+        && request.resource.data.status in ['en_revision', 'derivada', 'resuelta']
+        && request.resource.data.status != resource.data.status
+        && request.resource.data.updatedAt is string
+        && request.resource.data.updatedAt.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}
+    }
+
+    match /historialInstitucional/{eventId} {
+      allow get, list: if rosterReader();
+      allow create, update, delete: if false;
+    }
+
+    match /configuracionEconomica/{documentId} {
+      allow get, list: if treasurer() || president();
+      allow create, update, delete: if false;
+    }
+
+    match /configuracion/{configId} {
+      allow get, list: if secretary() || president();
+      allow create, update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+)
+        && request.resource.data.updatedAtServer == request.time;
+      allow delete: if false;
     }
 
     match /historialInstitucional/{eventId} {
