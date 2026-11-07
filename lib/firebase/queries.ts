@@ -72,8 +72,8 @@ export async function readEconomicSettings(identity: PortalIdentity) {
 
 /** User accounts are visible to Presidency only. Provisioning remains server-only. */
 export async function readUserDirectory(identity: PortalIdentity) {
-  if (identity.user.role !== "presidencia") {
-    throw new Error("Solo Presidencia puede consultar las cuentas.");
+  if (!["secretaria","presidencia"].includes(identity.user.role)) {
+    throw new Error("Solo Secretaría y Presidencia pueden consultar las cuentas.");
   }
   return listWithIds<UserRecord>("usuarios");
 }
