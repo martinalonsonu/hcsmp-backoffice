@@ -5,7 +5,7 @@ import {
 import { getFirebaseServices } from "./client";
 import type { PortalIdentity } from "./auth";
 import type {
-  MemberRecord, MovementRecord, RequestRecord, EconomicSettingsRecord,
+  MemberRecord, MovementRecord, RequestRecord, EconomicSettingsRecord, UserRecord,
 } from "./models";
 
 function listWithIds<T extends DocumentData>(
@@ -68,4 +68,12 @@ export async function readEconomicSettings(identity: PortalIdentity) {
   const { db } = getFirebaseServices();
   const snapshot = await getDoc(doc(db, "configuracionEconomica", "general"));
   return snapshot.exists() ? (snapshot.data() as EconomicSettingsRecord) : null;
+}
+
+/** User accounts are visible to Presidency only. Provisioning remains server-only. */
+export async function readUserDirectory(identity: PortalIdentity) {
+  if (identity.user.role !== "presidencia") {
+    throw new Error("Solo Presidencia puede consultar las cuentas.");
+  }
+  return listWithIds<UserRecord>("usuarios");
 }
