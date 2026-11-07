@@ -7,6 +7,8 @@ import { logoutFirebase, observePortalIdentity, type PortalIdentity } from "@/li
 import { readMyMember, readRoster, readRequests, readAccountMovements, readAllMovements } from "@/lib/firebase/queries";
 import type { MemberRecord, MovementRecord, RequestRecord } from "@/lib/firebase/models";
 import { HcsmpBrand } from "@/components/brand/hcsmp-brand";
+import { submitInstitutionalRequest, setInstitutionalRequestStatus } from "@/lib/firebase/requests";
+import type { RequestStatus } from "@/lib/portal";
 
 type MemberRow = MemberRecord & { id: string };
 type MovementRow = MovementRecord & { id: string };
@@ -22,6 +24,11 @@ export function FirebaseDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("");
+  const [requestTitle, setRequestTitle] = useState("");
+  const [requestContent, setRequestContent] = useState("");
+  const [requestBusy, setRequestBusy] = useState(false);
+  const [requestMessage, setRequestMessage] = useState("");
+  const [reload, setReload] = useState(0);
   useEffect(() => {
     let active = true;
     let generation = 0;
@@ -60,7 +67,7 @@ export function FirebaseDashboard() {
       setLoading(false);
     }
     return () => { active = false; generation++; unsubscribe?.(); };
-  }, [router]);
+  }, [router, reload]);
 
   const role = identity?.user.role;
   const canRoster = role === "secretaria" || role === "presidencia";
@@ -78,6 +85,30 @@ export function FirebaseDashboard() {
   const allowed = items.some((item) => item.view === view);
   const personal = data?.movements.filter((movement) => movement.memberId === identity?.user.hermanoId) ?? [];
   const money = (cents: number) => new Intl.NumberFormat("es-PE",{style:"currency",currency:"PEN"}).format(cents / 100);
+
+  async function sendRequest(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!identity || requestBusy) return;
+    setRequestBusy(true); setRequestMessage("");
+    try {
+      await submitInstitutionalRequest(identity, requestTitle, requestContent);
+      setRequestTitle(""); setRequestContent("");
+      setReload((value) => value + 1);
+    } catch (cause) {
+      setRequestMessage(cause instanceof Error ? cause.message : "No se pudo enviar la solicitud.");
+    } finally { setRequestBusy(false); }
+  }
+
+  async function changeRequestStatus(requestId: string, status: RequestStatus) {
+    if (!identity || requestBusy) return;
+    setRequestBusy(true); setRequestMessage("");
+    try {
+      await setInstitutionalRequestStatus(identity, requestId, status);
+      setReload((value) => value + 1);
+    } catch (cause) {
+      setRequestMessage(cause instanceof Error ? cause.message : "No se pudo actualizar la solicitud.");
+    } finally { setRequestBusy(false); }
+  }
 
   async function signOut() {
     try { await logoutFirebase(); router.replace("/"); }
@@ -126,12 +157,37 @@ export function FirebaseDashboard() {
             <tbody>{visible.map((member) => <tr key={member.id} className="border-t border-line"><td className="p-3">{member.fullName}</td><td className="p-3">{member.category}</td><td className="p-3">{member.status}</td></tr>)}</tbody>
           </table></div>
         </section>}
-        {data && allowed && view === "requests" && <section className="space-y-4">
+        {data && allowed && view === "requests" && <section className="space-y-5">
           <h2 className="font-display text-2xl">Solicitudes</h2>
+          {requestMessage && <p role="alert" className="text-sm text-red-700">{requestMessage}</p>}
+          {role !== "secretaria" && <form onSubmit={(event) => void sendRequest(event)}
+            className="space-y-4 rounded-sm border border-line bg-white-warm p-5">
+            <h3 className="font-semibold">Nueva solicitud a Secretaría</h3>
+            <label className="block space-y-2"><span className="text-sm">Asunto</span>
+              <input className="w-full rounded-sm border border-line p-3" required minLength={5} maxLength={120}
+                value={requestTitle} onChange={(event) => setRequestTitle(event.target.value)} /></label>
+            <label className="block space-y-2"><span className="text-sm">Contenido</span>
+              <textarea className="w-full rounded-sm border border-line p-3" required minLength={10} maxLength={5000}
+                rows={5} value={requestContent} onChange={(event) => setRequestContent(event.target.value)} /></label>
+            <button type="submit" disabled={requestBusy}
+              className="rounded-sm bg-forest px-4 py-2 text-white disabled:opacity-50">
+              {requestBusy ? "Guardando…" : "Enviar solicitud"}</button>
+          </form>}
           {data.requests.length === 0 ? <p>No hay solicitudes registradas.</p> :
-            data.requests.map((request) => <article key={request.id} className="rounded-sm border border-line p-4">
-              <h3 className="font-semibold">{request.title}</h3><p className="text-sm text-muted">{request.status} · {request.submittedAt}</p>
-              <p className="mt-2 whitespace-pre-wrap text-sm">{request.content}</p></article>)}
+            data.requests.map((request) => <article key={request.id} className="space-y-3 rounded-sm border border-line p-4">
+              <h3 className="font-semibold">{request.title}</h3>
+              <p className="text-sm text-muted">{request.status} · {request.submittedAt}</p>
+              <p className="whitespace-pre-wrap text-sm">{request.content}</p>
+              {role === "secretaria" && request.status !== "resuelta" && <label className="block space-y-2">
+                <span className="text-sm">Actualizar seguimiento</span>
+                <select className="rounded-sm border border-line bg-white p-2" disabled={requestBusy}
+                  value={request.status} onChange={(event) => void changeRequestStatus(request.id, event.target.value as RequestStatus)}>
+                  <option value={request.status}>{request.status}</option>
+                  {(["en_revision", "derivada", "resuelta"] as const).filter((status) => status !== request.status)
+                    .map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
+              </label>}
+            </article>)}
         </section>}
         {data && allowed && (view === "account" || view === "treasury") && <section className="space-y-4">
           <h2 className="font-display text-2xl">{view === "treasury" ? "Tesorería" : "Mi estado de cuenta"}</h2>
@@ -150,7 +206,7 @@ export function FirebaseDashboard() {
           <p><strong>Estado:</strong> {data.member.status}</p>
         </section>}
         {data && <p className="border-t border-line pt-5 text-xs text-muted">
-          Modo institucional de solo lectura. El registro, las modificaciones, las solicitudes nuevas y los cobros
+          Portal institucional. El registro de hermanos, las modificaciones de fichas y los cobros
           estarán disponibles cuando sus operaciones seguras estén implementadas.
         </p>}
       </main>
