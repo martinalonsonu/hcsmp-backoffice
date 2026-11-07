@@ -7,7 +7,7 @@ import { logoutFirebase, observePortalIdentity, type PortalIdentity } from "@/li
 import { readMyMember, readRoster, readRequests, readAccountMovements, readAllMovements, readUserDirectory } from "@/lib/firebase/queries";
 import type { MemberRecord, MovementRecord, RequestRecord, UserRecord } from "@/lib/firebase/models";
 import { HcsmpBrand } from "@/components/brand/hcsmp-brand";
-import { createInstitutionalMember, updateInstitutionalMemberContact } from "@/lib/firebase/members";
+import { createInstitutionalMember, updateInstitutionalMemberContact, changeMemberCategory } from "@/lib/firebase/members";
 import type { Category, Guardian } from "@/lib/portal";
 import { submitInstitutionalRequest, setInstitutionalRequestStatus } from "@/lib/firebase/requests";
 import type { RequestStatus } from "@/lib/portal";
@@ -27,6 +27,9 @@ export function FirebaseDashboard() {
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("");
   const [memberBusy, setMemberBusy] = useState(false);
+  const [categoryTarget, setCategoryTarget] = useState<MemberRow | null>(null);
+  const [nextCategory, setNextCategory] = useState<Category>("activo");
+  const [categoryReason, setCategoryReason] = useState("");
   const [memberMessage, setMemberMessage] = useState("");
   const [memberFormOpen, setMemberFormOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<MemberRow | null>(null);
@@ -140,6 +143,19 @@ export function FirebaseDashboard() {
     } finally { setMemberBusy(false); }
   }
 
+  async function submitCategoryChange(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!identity || !categoryTarget || memberBusy) return;
+    setMemberBusy(true); setMemberMessage("");
+    try {
+      await changeMemberCategory(identity,categoryTarget.id,nextCategory,categoryReason);
+      setCategoryTarget(null); setCategoryReason("");
+      setReload((value) => value + 1);
+    } catch (cause) {
+      setMemberMessage(cause instanceof Error ? cause.message : "No se pudo cambiar la categoría.");
+    } finally { setMemberBusy(false); }
+  }
+
   function openMember(member: MemberRow | null) {
     setEditingMember(member);
     setMemberMessage("");
@@ -210,7 +226,11 @@ export function FirebaseDashboard() {
             <tbody>{visible.map((member) => <tr key={member.id} className="border-t border-line">
               <td className="p-3">{member.fullName}</td><td className="p-3">{member.category}</td>
               <td className="p-3">{member.status}</td><td className="p-3">
-                <button type="button" className="underline" onClick={() => openMember(member)}>Editar contacto</button>
+                <button type="button" className="underline" onClick={() => openMember(member)}>Editar ficha</button>
+                {role === "secretaria" && member.status === "vigente" && <button type="button" className="ml-3 underline"
+                  onClick={() => { setCategoryTarget(member); setNextCategory(member.category); setCategoryReason(""); setMemberMessage(""); }}>
+                  Cambiar categoría
+                </button>}
               </td></tr>)}</tbody>
           </table></div>
         </section>}
@@ -280,6 +300,33 @@ export function FirebaseDashboard() {
           estarán disponibles cuando sus operaciones seguras estén implementadas.
         </p>}
       </main>
+      {categoryTarget && role === "secretaria" && <div role="dialog" aria-modal="true" aria-labelledby="category-title"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <form onSubmit={(event) => void submitCategoryChange(event)} className="w-full max-w-lg space-y-5 rounded-sm bg-white-warm p-6">
+          <h2 id="category-title" className="font-display text-2xl">Cambio de categoría</h2>
+          <p className="text-sm">{categoryTarget.fullName} · Categoría actual: <strong>{categoryTarget.category}</strong></p>
+          <label className="block space-y-2 text-sm"><span>Nueva categoría</span>
+            <select className="w-full rounded-sm border border-line p-3" value={nextCategory}
+              onChange={(event) => setNextCategory(event.target.value as Category)}>
+              {(["postulante","reingresante","activo","vitalicio"] as const).map((category) =>
+                <option key={category} value={category}>{category}</option>)}
+            </select>
+          </label>
+          <label className="block space-y-2 text-sm"><span>Motivo del cambio (obligatorio)</span>
+            <textarea className="w-full rounded-sm border border-line p-3" minLength={10} maxLength={500}
+              required rows={4} value={categoryReason} onChange={(event) => setCategoryReason(event.target.value)}/>
+          </label>
+          <p className="text-xs text-muted">La operación registrará un evento permanente en el historial institucional.</p>
+          {memberMessage && <p role="alert" className="text-sm text-red-700">{memberMessage}</p>}
+          <div className="flex justify-end gap-3">
+            <button type="button" disabled={memberBusy} className="rounded-sm border border-line px-4 py-2"
+              onClick={() => setCategoryTarget(null)}>Cancelar</button>
+            <button type="submit" disabled={memberBusy || nextCategory === categoryTarget.category}
+              className="rounded-sm bg-forest px-4 py-2 text-white disabled:opacity-50">
+              {memberBusy ? "Guardando…" : "Confirmar cambio"}</button>
+          </div>
+        </form>
+      </div>}
           {memberFormOpen && <div role="dialog" aria-modal="true" aria-labelledby="member-dialog-title"
             className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-paper">
             <header className="flex shrink-0 items-center justify-between gap-4 border-b border-line bg-white-warm px-5 py-4 sm:px-10">
