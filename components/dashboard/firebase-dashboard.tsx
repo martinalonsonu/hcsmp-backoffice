@@ -289,8 +289,8 @@ export function FirebaseDashboard() {
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-10">
             <form id="member-form" onSubmit={(event) => void saveMember(event)}
               className="mx-auto max-w-5xl space-y-6 pb-24">
-            <h3 className="font-semibold">{editingMember ? "Editar datos de contacto" : "Datos de la ficha institucional"}</h3>
-            <p className="text-sm text-muted">Registrar un hermano no crea una cuenta de acceso al portal.</p>
+            <h3 className="font-semibold">{editingMember ? "Editar información personal, sacramental y del apoderado" : "Datos de la ficha institucional"}</h3>
+            <p className="text-sm text-muted">{editingMember ? "El DNI, la categoría, el estado y las fechas institucionales no pueden modificarse desde esta edición. Los cambios de categoría y estado corresponden exclusivamente a Secretaría." : "Registrar un hermano no crea una cuenta de acceso al portal."}</p>
             <div className="grid gap-4 sm:grid-cols-2">
               {([
                 ["fullName","Nombres y apellidos"],["dni","DNI"],["birthDate","Fecha de nacimiento"],
@@ -314,7 +314,7 @@ export function FirebaseDashboard() {
                 </select>
               </label>
             </div>
-            {!editingMember && <>
+            <>
               <section className="space-y-3 border-t border-line pt-6">
                 <h3 className="font-semibold">Vida sacramental</h3>
                 <p className="text-sm text-muted">Selecciona los sacramentos recibidos.</p>
@@ -372,7 +372,7 @@ export function FirebaseDashboard() {
                   </fieldset>
                 </div>}
               </section>
-            </>}
+            </>
             {memberMessage && <p role="alert" className="text-sm text-red-700">{memberMessage}</p>}
             <div className="flex flex-wrap justify-end gap-3 border-t border-line pt-5">
               <button type="button" disabled={memberBusy} onClick={() => setMemberFormOpen(false)} className="rounded-sm border border-line px-5 py-3">Cancelar</button>
