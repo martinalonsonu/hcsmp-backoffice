@@ -81,3 +81,34 @@ export async function changeMemberCategory(identity: PortalIdentity, memberId: s
       createdAtServer:serverTimestamp()});
   });
 }
+
+/** Secretary-only lifecycle transition. The original member ID and ledger remain intact. */
+export async function changeMemberLifecycle(identity: PortalIdentity, memberId: string, action: "retiro" | "reingreso", reason: string) {
+  if (identity.user.role !== "secretaria") throw new Error("Solo Secretaría puede registrar retiros y reingresos.");
+  const motive = reason.trim();
+  if (motive.length < 10 || motive.length > 500) throw new Error("Indica un motivo de 10 a 500 caracteres.");
+  const { db } = getFirebaseServices();
+  const memberRef = doc(db,"hermanos",memberId);
+  const eventRef = doc(collection(db,"historialInstitucional"));
+  await runTransaction(db, async (tx) => {
+    const snapshot = await tx.get(memberRef);
+    if (!snapshot.exists()) throw new Error("No se encontró al hermano.");
+    const current = snapshot.data() as MemberRecord;
+    if (action === "retiro" && current.status !== "vigente") throw new Error("El hermano ya se encuentra retirado.");
+    if (action === "reingreso" && current.status !== "retirado") throw new Error("Solo puede reingresar un hermano retirado.");
+    const now = date();
+    const status = action === "retiro" ? "retirado" : "vigente";
+    const category = action === "reingreso" ? "reingresante" : current.category;
+    tx.update(memberRef,{
+      status, category,
+      ...(action === "retiro" ? {retiredAt:now} : {rejoinedAt:now}),
+      updatedAt:now, updatedAtServer:serverTimestamp(),
+      lastLifecycleEventId:eventRef.id,
+    });
+    tx.set(eventRef,{
+      hermanoId:memberId,type:action,fromStatus:current.status,status,
+      fromCategory:current.category,category,date:now,reason:motive,
+      recordedBy:identity.uid,createdAt:now,createdAtServer:serverTimestamp(),
+    });
+  });
+}
