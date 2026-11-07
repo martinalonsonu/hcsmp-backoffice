@@ -201,38 +201,6 @@ export function FirebaseDashboard() {
               {memberFormOpen ? "Cancelar" : "Registrar hermano"}
             </button>
           </div>
-          {memberMessage && <p role="alert" className="text-sm text-red-700">{memberMessage}</p>}
-          {memberFormOpen && <form onSubmit={(event) => void saveMember(event)}
-            className="space-y-4 rounded-sm border border-line bg-white-warm p-5">
-            <h3 className="font-semibold">{editingMember ? "Editar datos de contacto" : "Nueva ficha institucional"}</h3>
-            <p className="text-sm text-muted">Registrar un hermano no crea una cuenta de acceso al portal.</p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {([
-                ["fullName","Nombres y apellidos"],["dni","DNI"],["birthDate","Fecha de nacimiento"],
-                ["joinedAt","Fecha de ingreso"],["swornAt","Fecha de juramentación"],
-                ["address","Dirección"],["phone","Teléfono"],["email","Correo electrónico"],
-                ["occupation","Ocupación"],["maritalStatus","Estado civil"],
-              ] as const).map(([key,label]) => <label key={key} className="block space-y-2">
-                <span className="text-sm">{label}</span>
-                <input className="w-full rounded-sm border border-line bg-white p-3"
-                  type={key === "birthDate" || key === "joinedAt" || key === "swornAt" ? "date" : "text"}
-                  disabled={!!editingMember && !["address","phone","email","occupation","maritalStatus"].includes(key)}
-                  required={key === "fullName"} value={memberDraft[key]}
-                  onChange={(event) => setMemberDraft((current) => ({...current,[key]:event.target.value}))}/>
-              </label>)}
-              <label className="block space-y-2"><span className="text-sm">Categoría</span>
-                <select className="w-full rounded-sm border border-line bg-white p-3"
-                  disabled={!!editingMember} value={memberDraft.category}
-                  onChange={(event) => setMemberDraft((current) => ({...current,category:event.target.value as Category}))}>
-                  <option value="postulante">Postulante</option><option value="reingresante">Reingresante</option>
-                  <option value="activo">Activo</option><option value="vitalicio">Vitalicio</option>
-                </select>
-              </label>
-            </div>
-            <button type="submit" disabled={memberBusy} className="rounded-sm bg-forest px-4 py-2 text-white disabled:opacity-50">
-              {memberBusy ? "Guardando…" : editingMember ? "Guardar contacto" : "Registrar hermano"}
-            </button>
-          </form>}
           <label className="block space-y-2"><span className="text-sm">Buscar por nombre</span>
             <input type="search" className="block w-full rounded-sm border border-line bg-white p-3" value={filter}
               onChange={(event) => setFilter(event.target.value)} /></label>
@@ -312,6 +280,51 @@ export function FirebaseDashboard() {
           estarán disponibles cuando sus operaciones seguras estén implementadas.
         </p>}
       </main>
+          {memberFormOpen && <div role="dialog" aria-modal="true" aria-labelledby="member-dialog-title"
+            className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-paper">
+            <header className="flex shrink-0 items-center justify-between gap-4 border-b border-line bg-white-warm px-5 py-4 sm:px-10">
+              <div><p className="eyebrow">Gestión institucional</p><h2 id="member-dialog-title" className="font-display text-xl sm:text-2xl">{editingMember ? "Editar hermano" : "Registrar nuevo hermano"}</h2></div>
+              <button type="button" disabled={memberBusy} aria-label="Cerrar formulario" onClick={() => setMemberFormOpen(false)} className="rounded-sm border border-line px-4 py-2 text-sm hover:bg-mist disabled:opacity-50">Cerrar</button>
+            </header>
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-10">
+            <form id="member-form" onSubmit={(event) => void saveMember(event)}
+              className="mx-auto max-w-5xl space-y-6 pb-24">
+            <h3 className="font-semibold">{editingMember ? "Editar datos de contacto" : "Datos de la ficha institucional"}</h3>
+            <p className="text-sm text-muted">Registrar un hermano no crea una cuenta de acceso al portal.</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {([
+                ["fullName","Nombres y apellidos"],["dni","DNI"],["birthDate","Fecha de nacimiento"],
+                ["joinedAt","Fecha de ingreso"],["swornAt","Fecha de juramentación"],
+                ["address","Dirección"],["phone","Teléfono"],["email","Correo electrónico"],
+                ["occupation","Ocupación"],["maritalStatus","Estado civil"],
+              ] as const).map(([key,label]) => <label key={key} className="block space-y-2">
+                <span className="text-sm">{label}</span>
+                <input className="w-full rounded-sm border border-line bg-white p-3"
+                  type={key === "birthDate" || key === "joinedAt" || key === "swornAt" ? "date" : "text"}
+                  disabled={!!editingMember && !["address","phone","email","occupation","maritalStatus"].includes(key)}
+                  required={key === "fullName"} value={memberDraft[key]}
+                  onChange={(event) => setMemberDraft((current) => ({...current,[key]:event.target.value}))}/>
+              </label>)}
+              <label className="block space-y-2"><span className="text-sm">Categoría</span>
+                <select className="w-full rounded-sm border border-line bg-white p-3"
+                  disabled={!!editingMember} value={memberDraft.category}
+                  onChange={(event) => setMemberDraft((current) => ({...current,category:event.target.value as Category}))}>
+                  <option value="postulante">Postulante</option><option value="reingresante">Reingresante</option>
+                  <option value="activo">Activo</option><option value="vitalicio">Vitalicio</option>
+                </select>
+              </label>
+            </div>
+            {memberMessage && <p role="alert" className="text-sm text-red-700">{memberMessage}</p>}
+            <div className="flex flex-wrap justify-end gap-3 border-t border-line pt-5">
+              <button type="button" disabled={memberBusy} onClick={() => setMemberFormOpen(false)} className="rounded-sm border border-line px-5 py-3">Cancelar</button>
+              <button type="submit" disabled={memberBusy} className="rounded-sm bg-forest px-5 py-3 text-white disabled:opacity-50">
+                {memberBusy ? "Guardando…" : editingMember ? "Guardar contacto" : "Registrar hermano"}
+              </button>
+            </div>
+          </form>
+          </div>
+          </div>}
+
     </div>
   );
 }
