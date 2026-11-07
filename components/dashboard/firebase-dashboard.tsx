@@ -8,6 +8,7 @@ import { readMyMember, readRoster, readRequests, readAccountMovements, readAllMo
 import type { MemberRecord, MovementRecord, RequestRecord, UserRecord } from "@/lib/firebase/models";
 import { HcsmpBrand } from "@/components/brand/hcsmp-brand";
 import { createInstitutionalMember, updateInstitutionalMemberContact, changeMemberCategory, changeMemberLifecycle } from "@/lib/firebase/members";
+import {updateAccountAccess} from "@/lib/firebase/user-access";
 import type { Category, Guardian } from "@/lib/portal";
 import { submitInstitutionalRequest, setInstitutionalRequestStatus } from "@/lib/firebase/requests";
 import type { RequestStatus } from "@/lib/portal";
@@ -40,6 +41,8 @@ export function FirebaseDashboard() {
     occupation:"",maritalStatus:"",joinedAt:"",swornAt:"",
     category:"activo" as Category, sacraments:[] as string[], guardian:null as Guardian | null,
   });
+  const [accountBusy, setAccountBusy] = useState(false);
+  const [accountMessage, setAccountMessage] = useState("");
   const [requestTitle, setRequestTitle] = useState("");
   const [requestContent, setRequestContent] = useState("");
   const [requestBusy, setRequestBusy] = useState(false);
@@ -67,7 +70,7 @@ export function FirebaseDashboard() {
               role === "secretaria" || role === "presidencia" ? readRoster(next) : Promise.resolve([]),
               readRequests(next),
               role === "tesoreria" || role === "presidencia" ? readAllMovements(next) : readAccountMovements(next),
-              role === "presidencia" ? readUserDirectory(next) : Promise.resolve([]),
+              (role === "presidencia" || role === "secretaria") ? readUserDirectory(next) : Promise.resolve([]),
             ]);
             if (active && version === generation) setData({member, roster, requests, movements, users});
           } catch (cause) {
@@ -93,7 +96,7 @@ export function FirebaseDashboard() {
     {view:"summary",label:"Resumen"},
     ...(canRoster ? [{view:"members",label:"Padrón de hermanos"}] : []),
     ...(canTreasury ? [{view:"treasury",label:"Tesorería"}] : []),
-    ...(role === "presidencia" ? [{view:"users",label:"Usuarios y accesos"}] : []),
+    ...(canRoster ? [{view:"users",label:"Usuarios y accesos"}] : []),
     {view:"requests",label:"Solicitudes"},
     {view:"account",label:"Mi estado de cuenta"},
     {view:"profile",label:"Mi perfil"},
@@ -126,6 +129,14 @@ export function FirebaseDashboard() {
     } catch (cause) {
       setRequestMessage(cause instanceof Error ? cause.message : "No se pudo actualizar la solicitud.");
     } finally { setRequestBusy(false); }
+  }
+
+  async function changeAccount(uid:string, changes:{role?:UserRecord["role"];activo?:boolean}) {
+    if (!identity || accountBusy) return;
+    setAccountBusy(true);setAccountMessage("");
+    try { await updateAccountAccess(identity,uid,changes);setReload((value)=>value+1); }
+    catch(cause){setAccountMessage(cause instanceof Error?cause.message:"No se pudo actualizar la cuenta.");}
+    finally{setAccountBusy(false);}
   }
 
   async function saveMember(event: React.FormEvent<HTMLFormElement>) {
@@ -256,16 +267,33 @@ export function FirebaseDashboard() {
         </section>}
         {data && allowed && view === "users" && <section className="space-y-5">
           <h2 className="font-display text-2xl">Usuarios y accesos</h2>
-          <p className="text-sm text-muted">Directorio de cuentas autorizadas. Crear cuentas o modificar roles requiere
-            un servicio administrativo seguro; estas operaciones no se realizan desde el navegador.</p>
+          <p className="text-sm text-muted">Las cuentas se vinculan con las fichas institucionales por hermanoId.
+            Secretaría administra roles y accesos; Presidencia consulta.</p>
+          <p className="text-sm text-muted">Crear credenciales de Firebase Authentication requiere un proceso administrativo seguro.
+            No se crean cuentas de acceso escribiendo solamente documentos en Firestore.</p>
+          {accountMessage && <p role="alert" className="text-sm text-red-700">{accountMessage}</p>}
           <div className="overflow-x-auto rounded-sm border border-line"><table className="w-full text-left text-sm">
             <thead><tr className="bg-mist"><th className="p-3">Usuario</th><th className="p-3">Hermano vinculado</th>
               <th className="p-3">Rol</th><th className="p-3">Acceso</th></tr></thead>
             <tbody>{data.users.map((user) => <tr key={user.id} className="border-t border-line">
-              <td className="p-3">{user.username}</td><td className="p-3">{user.hermanoId}</td>
-              <td className="p-3">{user.role}</td><td className="p-3">{user.activo ? "Habilitado" : "Deshabilitado"}</td>
+              <td className="p-3">{user.username}</td>
+              <td className="p-3">{data.roster.find((member)=>member.id===user.hermanoId)?.fullName ?? user.hermanoId}</td>
+              <td className="p-3">{role==="secretaria" && user.id!==identity?.uid ?
+                <select aria-label={`Rol de ${user.username}`} className="border border-line p-2" disabled={accountBusy}
+                  value={user.role} onChange={(event)=>void changeAccount(user.id,{role:event.target.value as UserRecord["role"]})}>
+                  {(["estandar","tesoreria","secretaria","presidencia"] as const).map((item)=>
+                    <option key={item} value={item}>{item}</option>)}
+                </select> : user.role}</td>
+              <td className="p-3">{role==="secretaria" && user.id!==identity?.uid ?
+                <button type="button" disabled={accountBusy} className="underline"
+                  onClick={()=>void changeAccount(user.id,{activo:!user.activo})}>
+                  {user.activo?"Deshabilitar":"Habilitar"}
+                </button> : user.activo?"Habilitado":"Deshabilitado"}</td>
             </tr>)}</tbody>
           </table></div>
+          <h3 className="font-semibold">Hermanos sin cuenta vinculada</h3>
+          <div className="space-y-2">{data.roster.filter((member)=>!data.users.some((user)=>user.hermanoId===member.id))
+            .map((member)=><p key={member.id} className="text-sm">{member.fullName} · {member.dni || "Sin DNI"}</p>)}</div>
         </section>}
         {data && allowed && view === "requests" && <section className="space-y-5">
           <h2 className="font-display text-2xl">Solicitudes</h2>
