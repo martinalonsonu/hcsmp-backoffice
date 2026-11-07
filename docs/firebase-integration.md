@@ -1,54 +1,66 @@
-# Firebase: integración gradual
+# HCSMP: integración Firebase (actualizada con main 4502dcde)
 
-## Estado
+## Estado real
 
-Esta rama incorpora la **base técnica**, no una migración terminada. La aplicación
-continúa utilizando la demo local hasta sustituir `PortalProvider`.
-No cargar datos personales reales todavía.
+**Infraestructura preparada; aplicación aún en modo demostración.**
+`components/portal/portal-provider.tsx` sigue usando `localStorage` y
+`sessionStorage`. `lib/firebase/client.ts` todavía no se importa en la UI.
+**No usar datos reales ni publicar el portal como sistema productivo.**
 
-## Servicios
+## Modelo existente que debemos preservar
 
-- Firebase Authentication: proveedor email/password habilitado; la interfaz
-  seguirá mostrando un nombre de usuario.
-- Cloud Firestore Standard: reglas inicialmente de **solo lectura autorizada**.
-- Hosting: GitHub Pages; no es necesario Firebase Hosting.
+- Roles: estandar, tesoreria, secretaria, presidencia.
+- Categorías: postulante, reingresante, activo, vitalicio.
+- Alta de hermanos: usuario `nombre.apellido` con manejo de duplicados.
+- Padrón y fichas PDF, retiros y reingresos.
+- Movimientos: ingreso, egreso, cargo y pago.
+- Cuotas ordinarias con historial de vigencias, inicio de facturación,
+  cuotas extraordinarias de mayo/noviembre y cargo por reingreso.
+- Solicitudes: enviada, en_revision, derivada y resuelta.
+- Reporte mensual de caja en PDF.
 
-## Colecciones
+## Colecciones previstas
 
-- `usuarios/{uid}`: acceso, rol, vínculo `hermanoId`; nunca contraseñas.
-- `hermanos/{id}`: ficha institucional (campos de `MemberDraft`).
-- `movimientos/{id}`: transición del modelo económico actual.
-- `historialInstitucional/{id}`: eventos de retiro, reingreso y categoría.
-- `configuracion/{id}`: configuración institucional futura.
+| Ruta | Finalidad |
+| --- | --- |
+| `usuarios/{uid}` | vínculo a hermano, usuario, rol y acceso activo |
+| `hermanos/{id}` | ficha institucional sin credenciales |
+| `movimientos/{id}` | caja y cargos actuales (importe en céntimos) |
+| `solicitudes/{id}` | peticiones y estado de seguimiento |
+| `historialInstitucional/{id}` | retiros, reingresos y categorías |
+| `configuracionEconomica/general` | tarifas por vigencia e inicio de facturación |
 
-Los tipos están en `lib/firebase/models.ts`. El modelo financiero definitivo
-requerirá obligaciones, pagos imputados, actividades y cortes; no se deben
-convertir movimientos de demo en deuda real.
+Las reglas están **deliberadamente en solo lectura**. En particular, no
+confieren a usuarios normales permisos para cambiar roles, importes ni estados.
 
-## Pasos para activar
+## Activación por etapas
 
-1. Ejecutar `npm install firebase` en el proyecto y confirmar el lockfile.
-2. Copiar `.env.example` a `.env.local` y completar los datos de configuración
-   de la app web desde Firebase Console.
-3. Probar reglas con Firebase Emulator antes de publicarlas.
-4. Publicar `firestore.rules` e índices con Firebase CLI (o consola).
-5. Crear una cuenta de prueba en Firebase Authentication desde la consola.
-6. Crear manualmente `usuarios/{uid}` con el mismo UID y
-   `hermanoId` correspondiente. El documento de usuario debe tener
-   `activo: true` y un rol válido.
-7. Migrar `PortalProvider` a Firebase Auth + Firestore, con consultas
-   restringidas por usuario y control de permisos.
-8. Diseñar aprovisionamiento seguro de cuentas por Secretaría y escrituras
-   con validación fuerte; **no habilitar escrituras generales**.
+1. En local, instalar `firebase` con `npm install firebase`; confirmar el
+   cambio de `package.json` **y** `package-lock.json` en el mismo commit.
+   No agregar solo la dependencia sin actualizar el lockfile: rompería `npm ci`.
+2. Copiar `.env.example` a `.env.local` y completar los valores públicos del
+   SDK Web. No compartir service accounts ni claves privadas.
+3. Probar `firestore.rules` en emulador, publicar las reglas y crear cuenta
+   piloto Auth con su documento `usuarios/{uid}`.
+4. Reemplazar login y sesión simulados con Firebase Authentication.
+5. Migrar `PortalProvider` a un adaptador de Firestore con consultas por rol,
+   operaciones atómicas e idempotencia de cargos programados.
+6. Implementar aprovisionamiento seguro para Secretaría. Firebase Auth Web SDK
+   no debe crear cuentas secundarias usando la sesión principal de Secretaría;
+   utilizar un entorno confiable o flujo controlado.
+7. Implementar escrituras con reglas exhaustivas, pruebas de autorización y
+   control de concurrencia. Recién entonces usar datos reales.
 
-## Precauciones
+## Consideraciones de seguridad
 
-- La configuración pública de Firebase no es una clave de administrador.
-- No se debe guardar `passwordHash` ni imágenes base64 en Firestore.
-- No usar credenciales demo ni datos reales mientras exista `localStorage`
-  como fuente de verdad.
-- Los hermanos honorarios pueden conservar ficha sin cuenta Auth.
-- Los cambios de perfil, creación de cuentas, caja y auditoría requieren
-  mecanismos confiables; las reglas actuales los bloquean deliberadamente.
-- El correo técnico basado en usuario no permite recuperación por correo;
-  hace falta un flujo administrativo seguro de restablecimiento.
+- No guardar `passwordHash` ni fotografías Base64 en documentos Firestore.
+- El alias de usuario y la cuenta Auth no son equivalentes: definir y verificar
+  el método de resolución de alias antes de exponerlo al público.
+- Una baja institucional debe bloquear lecturas de datos incluso si el token
+  Auth anterior sigue vigente.
+- El cálculo actual de cuotas se ejecuta en el navegador; al migrarlo se
+  necesitan IDs deterministas y transacciones para evitar duplicados entre
+  dispositivos y cierres de sesión.
+- Los filtros de Firestore son parte del control de acceso: las reglas no
+  filtran automáticamente los resultados de una consulta.
+- `firestore.rules` en Git no cambia las reglas de Firebase hasta desplegarlas.

@@ -2,21 +2,21 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
-    function userDoc() {
-      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid));
+    function userPath() {
+      return /databases/$(database)/documents/usuarios/$(request.auth.uid);
     }
     function authorized() {
       return signedIn()
-        && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid))
-        && userDoc().data.activo == true;
+        && exists(userPath())
+        && get(userPath()).data.activo == true;
     }
-    function roleIs(role) { return authorized() && userDoc().data.role == role; }
-    function staff() {
-      return roleIs('secretaria') || roleIs('tesoreria') || roleIs('presidencia');
-    }
-    function myMember(memberId) {
-      return authorized() && userDoc().data.hermanoId == memberId;
-    }
+    function myId() { return get(userPath()).data.hermanoId; }
+    function roleIs(role) { return authorized() && get(userPath()).data.role == role; }
+    function secretary() { return roleIs('secretaria'); }
+    function treasurer() { return roleIs('tesoreria'); }
+    function president() { return roleIs('presidencia'); }
+    function rosterReader() { return secretary() || president(); }
+    function financeReader() { return treasurer() || president(); }
 
     match /usuarios/{uid} {
       allow get: if authorized() && request.auth.uid == uid;
@@ -24,27 +24,39 @@ service cloud.firestore {
     }
 
     match /hermanos/{memberId} {
-      allow get: if myMember(memberId) || staff();
-      allow list: if staff();
-      // Solo Secretaría puede editar; la validación completa se incorporará
-      // antes de activar escrituras con datos reales.
+      allow get: if authorized() && (memberId == myId() || rosterReader());
+      allow list: if rosterReader();
+      // No writes until an audited, validated account provisioning flow exists.
       allow create, update, delete: if false;
     }
 
     match /movimientos/{movementId} {
-      allow get, list: if staff()
-        || (authorized() && resource.data.memberId == userDoc().data.hermanoId);
+      allow get, list: if financeReader()
+        || (authorized() && resource.data.memberId == myId());
+      // Own-state-of-account queries MUST filter by memberId.
+      allow create, update, delete: if false;
+    }
+
+    match /solicitudes/{requestId} {
+      allow get, list: if secretary()
+        || (authorized() && resource.data.requesterId == myId());
+      // Pending validated write rules; never trust a client-provided status.
       allow create, update, delete: if false;
     }
 
     match /historialInstitucional/{eventId} {
-      allow get, list: if roleIs('secretaria') || roleIs('presidencia');
+      allow get, list: if rosterReader();
+      allow create, update, delete: if false;
+    }
+
+    match /configuracionEconomica/{documentId} {
+      allow get, list: if treasurer() || president();
       allow create, update, delete: if false;
     }
 
     match /configuracion/{configId} {
-      allow read: if staff();
-      allow write: if false;
+      allow get, list: if secretary() || president();
+      allow create, update, delete: if false;
     }
 
     match /{document=**} {
