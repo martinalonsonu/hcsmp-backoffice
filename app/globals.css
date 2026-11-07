@@ -56,8 +56,17 @@
   }
 
   button:not(:disabled),
-  a {
+  a,
+  [role="button"]:not([aria-disabled="true"]),
+  select:not(:disabled),
+  summary {
+    cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  button:disabled,
+  select:disabled {
+    cursor: not-allowed;
   }
 
   :where(a, button, input, select, textarea):focus-visible {
