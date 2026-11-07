@@ -67,7 +67,32 @@ service cloud.firestore {
         && request.resource.data.sacraments is list
         && request.resource.data.sacraments.size() <= 10
         && request.resource.data.photoUrl == null
-        && request.resource.data.guardian == null
+        && (request.resource.data.guardian == null || (
+          request.resource.data.guardian is map
+          && request.resource.data.guardian.keys().hasOnly([
+            'fullName', 'dni', 'education', 'address', 'phone', 'relationship', 'age', 'sacraments'
+          ])
+          && request.resource.data.guardian.keys().hasAll([
+            'fullName', 'dni', 'education', 'address', 'phone', 'relationship', 'age', 'sacraments'
+          ])
+          && request.resource.data.guardian.fullName is string
+          && request.resource.data.guardian.fullName.size() >= 3
+          && request.resource.data.guardian.fullName.size() <= 160
+          && request.resource.data.guardian.dni is string
+          && (request.resource.data.guardian.dni == '' || request.resource.data.guardian.dni.size() == 8)
+          && request.resource.data.guardian.education is string
+          && request.resource.data.guardian.education.size() <= 100
+          && request.resource.data.guardian.address is string
+          && request.resource.data.guardian.address.size() <= 300
+          && request.resource.data.guardian.phone is string
+          && request.resource.data.guardian.phone.size() <= 30
+          && request.resource.data.guardian.relationship is string
+          && request.resource.data.guardian.relationship.size() <= 80
+          && request.resource.data.guardian.age is string
+          && request.resource.data.guardian.age.size() <= 3
+          && request.resource.data.guardian.sacraments is list
+          && request.resource.data.guardian.sacraments.size() <= 10
+        ))
         && request.resource.data.retiredAt == ''
         && request.resource.data.rejoinedAt == ''
         && request.resource.data.createdAt is string
