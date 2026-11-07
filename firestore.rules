@@ -20,8 +20,16 @@ service cloud.firestore {
 
     match /usuarios/{uid} {
       allow get: if authorized() && request.auth.uid == uid;
-      allow list: if president();
-      allow create, update, delete: if false;
+      allow list: if secretary() || president();
+      allow update: if secretary() && uid != request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['role','activo','updatedAt','updatedAtServer'])
+        && request.resource.data.role in ['estandar','tesoreria','secretaria','presidencia']
+        && request.resource.data.activo is bool
+        && request.resource.data.updatedAt is string
+        && request.resource.data.updatedAt.size() == 10
+        && request.resource.data.updatedAtServer == request.time;
+      allow create, delete: if false;
     }
 
     match /hermanos/{memberId} {
