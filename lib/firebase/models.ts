@@ -4,6 +4,8 @@
 import type {
   Category, Guardian, MemberRequest, OrdinaryFeeRate, RequestStatus, Role,
 } from "@/lib/portal";
+import type { MemberSex } from "@/lib/member-roster";
+import type { makeRosterIndex } from "@/lib/roster-index";
 
 export interface UserRecord {
   hermanoId: string;
@@ -18,6 +20,9 @@ export interface MemberRecord {
   fullName: string;
   dni: string;
   birthDate: string;
+  sex?: MemberSex | null;
+  hasChildren?: boolean | null;
+  rosterIndex?: ReturnType<typeof makeRosterIndex>;
   address: string;
   phone: string;
   email: string;

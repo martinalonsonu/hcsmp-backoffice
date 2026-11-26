@@ -84,10 +84,75 @@
   }
 }
 
+@layer components {
+  .eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    line-height: 1.25rem;
+    text-transform: uppercase;
+    color: var(--clay-text);
+  }
+}
+
+/*
+ * Entrada y salida de los <dialog> nativos. El atributo data-closing lo pone
+ * useAnimatedDialog mientras reproduce la salida, antes de cerrar el diálogo.
+ */
+dialog[data-modal][open] {
+  animation-duration: 220ms;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation-fill-mode: both;
+}
+
+dialog[data-modal][data-closing] {
+  animation-duration: 180ms;
+  animation-timing-function: ease-in;
+  animation-fill-mode: both;
+  pointer-events: none;
+}
+
+dialog[data-modal="drawer"][open] { animation-name: slide-in-right; }
+dialog[data-modal="drawer"][data-closing] { animation-name: slide-out-right; }
+dialog[data-modal="center"][open] { animation-name: pop-in; }
+dialog[data-modal="center"][data-closing] { animation-name: pop-out; }
+dialog[data-modal="full"][open] { animation-name: rise-in; }
+dialog[data-modal="full"][data-closing] { animation-name: rise-out; }
+dialog[data-modal="menu"][open] { animation-name: fade-in; }
+dialog[data-modal="menu"][data-closing] { animation-name: fade-out; }
+
+dialog[data-modal="menu"][open] > div > aside {
+  animation: slide-in-left 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+dialog[data-modal="menu"][data-closing] > div > aside {
+  animation: slide-out-left 180ms ease-in both;
+}
+
+dialog[data-modal][open]::backdrop {
+  animation: fade-in 220ms ease-out both;
+}
+
+dialog[data-modal][data-closing]::backdrop {
+  animation: fade-out 180ms ease-in both;
+}
+
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes slide-in-right { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes slide-out-right { from { transform: translateX(0); } to { transform: translateX(100%); } }
+@keyframes slide-in-left { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes slide-out-left { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes pop-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.96); } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes rise-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(12px); } }
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
-  *::after {
+  *::after,
+  dialog::backdrop {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;

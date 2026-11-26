@@ -20,6 +20,7 @@ import {
   type Member,
   type MembershipStatus,
 } from "./portal.ts";
+import { birthMonths, type MemberSex } from "./member-roster.ts";
 
 const DOCUMENT_XML = "word/document.xml";
 const PDF_TYPE = "application/pdf";
@@ -1031,12 +1032,17 @@ export async function generateMemberPdf(
 }
 
 export type MemberRosterFilters = {
-  status: MembershipStatus;
+  status?: MembershipStatus;
   category?: Category;
   ageGroup?: "mayores" | "menores";
   search?: string;
+  sex?: MemberSex;
+  parent?: "padre" | "madre";
+  birthMonth?: string;
+  sacrament?: string;
 };
 
+type RosterPdfMember = Pick<Member, "fullName" | "dni" | "birthDate" | "category" | "status" | "joinedAt" | "swornAt" | "phone">;
 const rosterPageSize: [number, number] = [841.89, 595.28];
 const rosterColumns = [
   { title: "#", width: 24 },
@@ -1051,13 +1057,17 @@ const rosterColumns = [
 ] as const;
 
 function rosterDescription(filters: MemberRosterFilters): string {
-  const parts = [statusLabels[filters.status]];
+  const parts = [filters.status ? statusLabels[filters.status] : "Todos los estados"];
   if (filters.category) parts.push(categoryLabels[filters.category]);
   if (filters.ageGroup)
     parts.push(
       filters.ageGroup === "mayores" ? "Mayores de edad" : "Menores de edad",
     );
   if (filters.search?.trim()) parts.push(`Búsqueda: ${filters.search.trim()}`);
+  if (filters.sex) parts.push(filters.sex === "varon" ? "Varón" : "Dama");
+  if (filters.parent) parts.push(filters.parent === "padre" ? "Padres" : "Madres");
+  if (filters.birthMonth) parts.push(`Cumpleaños: ${birthMonths[Number(filters.birthMonth) - 1]}`);
+  if (filters.sacrament) parts.push(filters.sacrament);
   return parts.join(" · ");
 }
 
@@ -1073,7 +1083,7 @@ function rosterFilename(filters: MemberRosterFilters): string {
 /** Creates a paginated roster PDF locally without exporting account credentials. */
 export async function generateMemberRosterPdf(
   fontBytes: Uint8Array,
-  members: Member[],
+  members: RosterPdfMember[],
   filters: MemberRosterFilters,
 ): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
@@ -1096,25 +1106,26 @@ export async function generateMemberRosterPdf(
       font,
       color: rgb(0.12, 0.18, 0.17),
     });
-    nextPage.drawText(description, {
+    const descriptionLines = wrappedLines(description, font, 8, contentWidth);
+    descriptionLines.forEach((line, index) => nextPage.drawText(line, {
       x: margin,
-      y: height - 52,
+      y: height - 52 - index * 10,
       size: 8,
       font,
       color: rgb(0.32, 0.35, 0.34),
-      maxWidth: contentWidth,
-    });
+    }));
+    const descriptionOffset = (descriptionLines.length - 1) * 10;
     nextPage.drawText(
       `${members.length} ${members.length === 1 ? "hermano" : "hermanos"} · Generado ${dateLabel(todayDate())}`,
       {
         x: margin,
-        y: height - 66,
+        y: height - 66 - descriptionOffset,
         size: 8,
         font,
         color: rgb(0.32, 0.35, 0.34),
       },
     );
-    y = height - 82;
+    y = height - 82 - descriptionOffset;
     const headerHeight = 24;
     nextPage.drawRectangle({
       x: margin,
@@ -1155,7 +1166,7 @@ export async function generateMemberRosterPdf(
     const values = [
       String(index + 1),
       plainText(member.fullName),
-      plainText(member.dni),
+      plainText(member.dni || "—"),
       age === null ? "—" : String(age),
       categoryLabels[member.category],
       statusLabels[member.status],
@@ -1217,7 +1228,7 @@ export async function generateMemberRosterPdf(
 
 /** Downloads the selected roster locally; no member data is uploaded. */
 export async function downloadMemberRoster(
-  members: Member[],
+  members: RosterPdfMember[],
   filters: MemberRosterFilters,
 ): Promise<void> {
   const fontResponse = await fetch("/fonts/LiberationSans-Regular.ttf");

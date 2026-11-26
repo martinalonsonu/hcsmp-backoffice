@@ -19,23 +19,22 @@ npm run lint
 npm run build
 ```
 
-La ruta `/` permite ingresar y `/dashboard` contiene los módulos. No se necesita
-configurar un backend ni variables de entorno.
+La ruta `/` permite ingresar. Cada módulo del portal tiene su propia ruta:
+`/dashboard` (resumen), `/padron`, `/usuarios`, `/solicitudes`, `/tesoreria`,
+`/estado-de-cuenta` y `/perfil`; el menú solo muestra las que corresponden al rol.
+Los enlaces antiguos `/dashboard?view=…` redirigen a la ruta de cada módulo.
+Configura las variables públicas del SDK y Firebase Authentication siguiendo
+[la guía de acceso](docs/firebase-auth-setup.md).
 
-## Cuentas para probar
+## Acceso
 
-| Usuario       | Perfil      |
-| ------------- | ----------- |
-| `secretaria`  | Secretaría  |
-| `tesoreria`   | Tesorería   |
-| `presidencia` | Presidencia |
-| `hermano`     | Estándar    |
+Secretaría registra al hermano, su correo y su perfil. El hermano activa su
+cuenta con el enlace que recibe en su correo y crea su contraseña. Para iniciar
+sesión se utiliza el correo y la contraseña. Las cuentas de demostración locales
+ya no sirven en la pantalla de acceso Firebase.
 
-La contraseña inicial de estas cuatro cuentas de ejemplo es `Demo2026!`.
-Los botones de la pantalla de acceso completan los datos; luego se pulsa
-**Iniciar sesión**. Las credenciales de los hermanos nuevos se generan al guardar
-su ficha y se muestran al secretario para entregarlas al hermano. El correo es
-opcional; también se puede ingresar con él si se registró.
+Las secciones siguientes describen también funciones del prototipo local; no
+todas están disponibles o listas para producción en el dashboard Firebase.
 
 ## Registro de hermanos
 
@@ -153,11 +152,11 @@ de juramentación original sigue siendo la referencia para los 30 años de
 Vitalicio. Los datos locales de la versión anterior se migran automáticamente,
 sin reiniciar el padrón ni las contraseñas.
 
-## Datos simulados e integración futura
+## Datos simulados e integración Firebase
 
-El proveedor de datos está en `components/portal/portal-provider.tsx`; las reglas,
-tipos y operaciones comprobables están en `lib/portal.ts`. Las pantallas usan
-este contrato para facilitar su conexión posterior a un servicio de backend.
+El prototipo local conserva su proveedor en `components/portal/portal-provider.tsx`
+y sus reglas en `lib/portal.ts`. El dashboard actual utiliza Firebase; consulta
+[la guía de integración](docs/firebase-integration.md) para sus limitaciones.
 
 Los registros se guardan en `localStorage` y la sesión en `sessionStorage` del
 mismo navegador y origen. Los accesos creados sirven para probar el flujo en ese

@@ -1,6 +1,43 @@
 {
   "indexes": [
     {
+      "collectionGroup": "hermanos", "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rosterIndex.facets", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "rosterIndex.name", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "hermanos", "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rosterIndex.facets", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "rosterIndex.dni", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "hermanos", "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rosterIndex.facets", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "rosterIndex.birthDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "hermanos", "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rosterIndex.facets", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "rosterIndex.name", "order": "ASCENDING" },
+        { "fieldPath": "rosterIndex.birthDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "hermanos", "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rosterIndex.facets", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "rosterIndex.dni", "order": "ASCENDING" },
+        { "fieldPath": "rosterIndex.birthDate", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "movimientos",
       "queryScope": "COLLECTION",
       "fields": [

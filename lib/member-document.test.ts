@@ -427,6 +427,16 @@ test("roster PDF includes filters, paginates all rows and omits account credenti
   assert.ok(!pdf.getSubject()?.includes("private-hash"));
 });
 
+test("roster PDF identifies all combined Firebase filters", async () => {
+  const bytes = await generateMemberRosterPdf(pdfFont, [member()], {
+    sex: "dama", parent: "madre", ageGroup: "mayores", category: "activo",
+    birthMonth: "02", sacrament: "Bautismo", search: "Ana",
+  });
+  const subject = (await PDFDocument.load(bytes)).getSubject();
+  for (const label of ["Todos los estados", "Dama", "Madres", "Mayores de edad", "Activo", "Febrero", "Bautismo", "Ana", "1 registros"])
+    assert.ok(subject?.includes(label), label);
+});
+
 test("the browser download always receives a PDF Blob and .pdf filename", async (context) => {
   const captured: { blob: Blob | null; filename: string; clicked: boolean } = {
     blob: null,
