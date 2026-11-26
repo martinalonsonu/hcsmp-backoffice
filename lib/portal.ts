@@ -101,6 +101,20 @@ export const statusLabels: Record<MembershipStatus, string> = {
   retirado: "Retirado",
 };
 
+export const requestStatusLabels: Record<RequestStatus, string> = {
+  enviada: "Enviada",
+  en_revision: "En revisión",
+  derivada: "Derivada",
+  resuelta: "Resuelta",
+};
+
+export const movementTypeLabels: Record<Movement["type"], string> = {
+  ingreso: "Ingreso",
+  egreso: "Egreso",
+  cargo: "Cargo",
+  pago: "Pago",
+};
+
 export function isTrialCategory(category: Category): boolean {
   return category === "postulante" || category === "reingresante";
 }

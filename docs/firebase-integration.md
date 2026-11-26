@@ -2,10 +2,52 @@
 
 ## Estado real
 
-**Infraestructura preparada; aplicación aún en modo demostración.**
-`components/portal/portal-provider.tsx` sigue usando `localStorage` y
-`sessionStorage`. `lib/firebase/client.ts` todavía no se importa en la UI.
-**No usar datos reales ni publicar el portal como sistema productivo.**
+La pantalla de acceso y el dashboard actual usan Firebase. El antiguo proveedor
+`components/portal/portal-provider.tsx` sigue siendo una implementación de
+demostración local y no es el flujo del dashboard Firebase. La integración
+todavía requiere validación operativa y de seguridad antes de datos reales.
+El procedimiento de autenticación vigente está en [firebase-auth-setup.md](./firebase-auth-setup.md).
+
+## Padrón Firebase
+
+La ficha permite registrar sexo y si el hermano tiene hijos. Las fichas anteriores
+conservan ambos datos como sin registrar hasta que se actualicen. El filtro
+Padres incluye varones con hijos y Madres incluye damas con hijos; los datos
+desconocidos no se consideran una respuesta negativa.
+
+El padrón combina búsqueda por inicio de nombre completo o DNI, sexo,
+padre/madre, edad, categoría, mes de cumpleaños y sacramento recibido. Incluye
+vigentes y retirados. Firestore aplica los filtros antes de recuperar cada
+página de 10; el PDF consulta todos los resultados filtrados y se genera
+localmente en el navegador. Los recuentos se consultan mediante agregaciones.
+
+Antes de habilitar esta versión, desplegar las reglas y los índices de
+`firestore.rules` y `firestore.indexes.json`, y esperar a que los índices
+estén listos. Antes de habilitar el portal, un administrador ejecuta una sola
+vez desde una terminal interactiva:
+
+```powershell
+node --experimental-strip-types scripts\backfill-roster.ts --project ID_DEL_PROYECTO
+```
+
+El proyecto debe coincidir con `NEXT_PUBLIC_FIREBASE_PROJECT_ID` en el entorno,
+`.env.local` o `.env`; se solicita el correo y la contraseña de una cuenta activa de
+Secretaría sin mostrarlos ni guardarlos. El proceso recorre las fichas antiguas
+y añade metadatos mediante transacciones; si se interrumpe puede volver a
+ejecutarse. Hasta completarlo, el padrón muestra un aviso de preparación y
+bloquea las consultas para evitar resultados incompletos. No deben utilizarse
+versiones antiguas del portal durante la migración: las nuevas escrituras
+requieren los metadatos y deben actualizarlos cuando cambien los filtros. La
+sección Usuarios y accesos todavía carga el padrón completo.
+
+La prueba de integración aislada requiere Firebase CLI y Java 21:
+
+```powershell
+firebase emulators:exec --project demo-hcsmp --only firestore "node --experimental-strip-types --test scripts\roster-emulator.test.ts"
+```
+
+El emulador no comprueba que los índices compuestos estén desplegados en el
+proyecto real; verificarlos antes de habilitar el padrón.
 
 ## Modelo existente que debemos preservar
 
@@ -30,26 +72,16 @@
 | `historialInstitucional/{id}` | retiros, reingresos y categorías |
 | `configuracionEconomica/general` | tarifas por vigencia e inicio de facturación |
 
-Las reglas están **deliberadamente en solo lectura**. En particular, no
-confieren a usuarios normales permisos para cambiar roles, importes ni estados.
+Las reglas permiten algunas escrituras controladas. Los usuarios normales no
+pueden asignarse roles ni modificar la preautorización de otra persona.
 
 ## Activación por etapas
 
-1. En local, instalar `firebase` con `npm install firebase`; confirmar el
-   cambio de `package.json` **y** `package-lock.json` en el mismo commit.
-   No agregar solo la dependencia sin actualizar el lockfile: rompería `npm ci`.
-2. Copiar `.env.example` a `.env.local` y completar los valores públicos del
-   SDK Web. No compartir service accounts ni claves privadas.
-3. Probar `firestore.rules` en emulador, publicar las reglas y crear cuenta
-   piloto Auth con su documento `usuarios/{uid}`.
-4. Reemplazar login y sesión simulados con Firebase Authentication.
-5. Migrar `PortalProvider` a un adaptador de Firestore con consultas por rol,
-   operaciones atómicas e idempotencia de cargos programados.
-6. Implementar aprovisionamiento seguro para Secretaría. Firebase Auth Web SDK
-   no debe crear cuentas secundarias usando la sesión principal de Secretaría;
-   utilizar un entorno confiable o flujo controlado.
-7. Implementar escrituras con reglas exhaustivas, pruebas de autorización y
-   control de concurrencia. Recién entonces usar datos reales.
+1. Configurar el SDK web y los proveedores de Auth como se indica en
+   [firebase-auth-setup.md](./firebase-auth-setup.md).
+2. Probar las reglas en emulador, publicarlas y aprovisionar la cuenta inicial.
+3. Validar todas las funcionalidades, reglas y operaciones concurrentes que
+   todavía no están completas antes de usar datos reales.
 
 ## Consideraciones de seguridad
 

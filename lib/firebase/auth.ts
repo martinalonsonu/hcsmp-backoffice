@@ -6,29 +6,13 @@ import {
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { getFirebaseServices } from "./client";
+import { normalizeEmail } from "./registration";
 import type { UserRecord } from "./models";
 
 /** Authentication account + authorization record, not a Member or a password hash. */
 export interface PortalIdentity {
   uid: string;
   user: UserRecord;
-}
-
-/**
- * Usernames are UI aliases. Provision Firebase Auth accounts with matching
- * addresses on an institution-controlled domain (or a tested reserved domain).
- * The alias must be globally unique and immutable unless both sides are updated.
- */
-export function usernameToAuthEmail(username: string): string {
-  const normalized = username.trim().normalize("NFKC").toLowerCase();
-  if (!/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/.test(normalized)) {
-    throw new Error("Ingresa un nombre de usuario válido.");
-  }
-  const domain = process.env.NEXT_PUBLIC_FIREBASE_LOGIN_DOMAIN?.trim().toLowerCase();
-  if (!domain || !/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(domain)) {
-    throw new Error("Configura NEXT_PUBLIC_FIREBASE_LOGIN_DOMAIN.");
-  }
-  return `${normalized}@${domain}`;
 }
 
 async function loadIdentity(uid: string): Promise<PortalIdentity> {
@@ -49,21 +33,21 @@ async function loadIdentity(uid: string): Promise<PortalIdentity> {
 }
 
 /** Sign-in is complete only after verifying the server-authorized Firestore record. */
-export async function loginWithUsername(
-  username: string,
+export async function loginWithEmail(
+  email: string,
   password: string,
 ): Promise<PortalIdentity> {
   const { auth } = getFirebaseServices();
   try {
     const credential = await signInWithEmailAndPassword(
       auth,
-      usernameToAuthEmail(username),
+      normalizeEmail(email),
       password,
     );
     return await loadIdentity(credential.user.uid);
   } catch (error) {
     await signOut(auth).catch(() => undefined);
-    if (error instanceof Error && /habilitada|autorización|Configura|válido/.test(error.message)) {
+    if (error instanceof Error && /habilitada|autorización|válido/.test(error.message)) {
       throw error;
     }
     throw new Error("El usuario o la contraseña no son correctos.");

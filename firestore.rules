@@ -8,7 +8,9 @@ service cloud.firestore {
     function authorized() {
       return signedIn()
         && exists(userPath())
-        && get(userPath()).data.activo == true;
+        && get(userPath()).data.activo == true
+        && exists(/databases/$(database)/documents/hermanos/$(get(userPath()).data.hermanoId))
+        && get(/databases/$(database)/documents/hermanos/$(get(userPath()).data.hermanoId)).data.status == 'vigente';
     }
     function myId() { return get(userPath()).data.hermanoId; }
     function roleIs(role) { return authorized() && get(userPath()).data.role == role; }
@@ -17,22 +19,93 @@ service cloud.firestore {
     function president() { return roleIs('presidencia'); }
     function rosterReader() { return secretary() || president(); }
     function financeReader() { return treasurer() || president(); }
+    function verifiedEmail() {
+      return signedIn() && request.auth.token.email is string
+        && request.auth.token.email_verified == true;
+    }
+    function enrollmentPath() {
+      return /databases/$(database)/documents/preautorizaciones/$(request.auth.token.email.lower());
+    }
+    function validMemberRole(role, memberId) {
+      return role == 'estandar'
+        || getAfter(/databases/$(database)/documents/hermanos/$(memberId)).data.category in ['activo', 'vitalicio'];
+    }
 
     match /usuarios/{uid} {
       allow get: if authorized() && request.auth.uid == uid;
       allow list: if secretary() || president();
+      allow create: if verifiedEmail() && uid == request.auth.uid
+        && exists(enrollmentPath())
+        && get(enrollmentPath()).data.uid == null
+        && get(enrollmentPath()).data.activo == true
+        && getAfter(enrollmentPath()).data.uid == uid
+        && request.resource.data.keys().hasOnly(['hermanoId', 'username', 'role', 'activo', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasAll(['hermanoId', 'username', 'role', 'activo', 'createdAt', 'updatedAt'])
+        && request.resource.data.hermanoId == get(enrollmentPath()).data.hermanoId
+        && request.resource.data.username == request.auth.token.email.lower()
+        && request.resource.data.role == get(enrollmentPath()).data.role
+        && request.resource.data.activo == true
+        && request.resource.data.createdAt is string
+        && request.resource.data.createdAt.size() == 10
+        && request.resource.data.updatedAt == request.resource.data.createdAt
+        && get(/databases/$(database)/documents/hermanos/$(request.resource.data.hermanoId)).data.status == 'vigente'
+        && get(/databases/$(database)/documents/hermanos/$(request.resource.data.hermanoId)).data.email.lower() == request.auth.token.email.lower();
       allow update: if secretary() && uid != request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['role','activo','updatedAt','updatedAtServer'])
         && request.resource.data.role in ['estandar','tesoreria','secretaria','presidencia']
+        && validMemberRole(request.resource.data.role, resource.data.hermanoId)
         && request.resource.data.activo is bool
         && request.resource.data.updatedAt is string
         && request.resource.data.updatedAt.size() == 10
         && request.resource.data.updatedAtServer == request.time;
-      allow create, delete: if false;
+      allow delete: if false;
+    }
+
+    match /preautorizaciones/{email} {
+      allow get: if secretary() || president()
+        || (verifiedEmail() && email == request.auth.token.email.lower());
+      allow list: if secretary() || president();
+      allow create: if secretary()
+        && email == email.lower()
+        && request.resource.data.keys().hasOnly(['hermanoId', 'role', 'activo', 'uid', 'createdAtServer'])
+        && request.resource.data.keys().hasAll(['hermanoId', 'role', 'activo', 'uid', 'createdAtServer'])
+        && request.resource.data.hermanoId is string
+        && request.resource.data.role in ['estandar','tesoreria','secretaria','presidencia']
+        && validMemberRole(request.resource.data.role, request.resource.data.hermanoId)
+        && request.resource.data.activo == true
+        && request.resource.data.uid == null
+        && request.resource.data.createdAtServer == request.time
+        && getAfter(/databases/$(database)/documents/hermanos/$(request.resource.data.hermanoId)).data.email.lower() == email
+        && getAfter(/databases/$(database)/documents/hermanos/$(request.resource.data.hermanoId)).data.status == 'vigente';
+      allow update: if secretary() && resource.data.uid == null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'activo'])
+        && request.resource.data.role in ['estandar','tesoreria','secretaria','presidencia']
+        && validMemberRole(request.resource.data.role, resource.data.hermanoId)
+        && request.resource.data.activo is bool;
+      allow update: if verifiedEmail() && email == request.auth.token.email.lower()
+        && resource.data.uid == null && resource.data.activo == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid', 'claimedAtServer'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.claimedAtServer == request.time
+        && getAfter(userPath()).data.hermanoId == resource.data.hermanoId
+        && getAfter(userPath()).data.role == resource.data.role
+        && getAfter(userPath()).data.activo == true;
+      allow delete: if secretary() && resource.data.uid == null;
     }
 
     match /hermanos/{memberId} {
+      function validRosterIndex() {
+        return request.resource.data.rosterIndex is map
+          && request.resource.data.rosterIndex.keys().hasOnly(['name', 'dni', 'birthDate', 'facets'])
+          && request.resource.data.rosterIndex.keys().hasAll(['name', 'dni', 'birthDate', 'facets'])
+          && request.resource.data.rosterIndex.name is string
+          && request.resource.data.rosterIndex.dni == request.resource.data.get('dni', '')
+          && request.resource.data.rosterIndex.birthDate is string
+          && request.resource.data.rosterIndex.facets is list
+          && request.resource.data.rosterIndex.facets.size() <= 80
+          && '*' in request.resource.data.rosterIndex.facets;
+      }
       allow get: if authorized() && (memberId == myId() || rosterReader());
       allow list: if rosterReader();
       // Roster managers may create a complete member record, never a user account.
@@ -42,15 +115,16 @@ service cloud.firestore {
           'occupation', 'maritalStatus', 'joinedAt', 'swornAt', 'category',
           'status', 'sacraments', 'photoUrl', 'guardian', 'retiredAt',
           'rejoinedAt', 'createdAt', 'updatedAt', 'createdAtServer',
-          'updatedAtServer', 'createdBy'
+          'updatedAtServer', 'createdBy', 'sex', 'hasChildren', 'rosterIndex'
         ])
         && request.resource.data.keys().hasAll([
           'fullName', 'dni', 'birthDate', 'address', 'phone', 'email',
           'occupation', 'maritalStatus', 'joinedAt', 'swornAt', 'category',
           'status', 'sacraments', 'photoUrl', 'guardian', 'retiredAt',
           'rejoinedAt', 'createdAt', 'updatedAt', 'createdAtServer',
-          'updatedAtServer', 'createdBy'
+          'updatedAtServer', 'createdBy', 'rosterIndex'
         ])
+        && validRosterIndex()
         && request.resource.data.fullName is string
         && request.resource.data.fullName.size() >= 5
         && request.resource.data.fullName.size() <= 160
@@ -58,6 +132,8 @@ service cloud.firestore {
         && (request.resource.data.dni == '' || request.resource.data.dni.size() == 8)
         && (request.resource.data.dni == '' || memberId == 'dni-' + request.resource.data.dni)
         && request.resource.data.birthDate is string
+        && (!('sex' in request.resource.data) || request.resource.data.sex == null || request.resource.data.sex in ['varon', 'dama'])
+        && (!('hasChildren' in request.resource.data) || request.resource.data.hasChildren == null || request.resource.data.hasChildren is bool)
         && request.resource.data.address is string
         && request.resource.data.address.size() <= 300
         && request.resource.data.phone is string
@@ -109,12 +185,21 @@ service cloud.firestore {
         && request.resource.data.updatedAtServer == request.time
         && request.resource.data.createdBy == request.auth.uid;
 
+      // One-time backfill of query metadata; no personal fields may be changed.
+      allow update: if secretary()
+        && !('rosterIndex' in resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rosterIndex'])
+        && validRosterIndex();
+
       // Contact details only; lifecycle and category changes need an audited workflow.
       allow update: if rosterReader()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'address', 'phone', 'email', 'occupation', 'maritalStatus',
-          'sacraments', 'guardian', 'updatedAt', 'updatedAtServer'
+          'sacraments', 'guardian', 'sex', 'hasChildren', 'rosterIndex', 'updatedAt', 'updatedAtServer'
         ])
+        && validRosterIndex()
+        && (!('sex' in request.resource.data) || request.resource.data.sex == null || request.resource.data.sex in ['varon', 'dama'])
+        && (!('hasChildren' in request.resource.data) || request.resource.data.hasChildren == null || request.resource.data.hasChildren is bool)
         && request.resource.data.address is string
         && request.resource.data.address.size() <= 300
         && request.resource.data.phone is string
@@ -159,8 +244,9 @@ service cloud.firestore {
       allow update: if secretary()
         && resource.data.status == 'vigente'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'category', 'updatedAt', 'updatedAtServer', 'lastCategoryEventId'
+          'category', 'rosterIndex', 'updatedAt', 'updatedAtServer', 'lastCategoryEventId'
         ])
+        && validRosterIndex()
         && request.resource.data.category in ['postulante','reingresante','activo','vitalicio']
         && request.resource.data.category != resource.data.category
         && request.resource.data.lastCategoryEventId is string
@@ -175,8 +261,9 @@ service cloud.firestore {
       // Retirement/readmission must commit an immutable matching event atomically.
       allow update: if secretary()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status','category','retiredAt','rejoinedAt','updatedAt','updatedAtServer','lastLifecycleEventId'
+          'status','category','rosterIndex','retiredAt','rejoinedAt','updatedAt','updatedAtServer','lastLifecycleEventId'
         ])
+        && validRosterIndex()
         && request.resource.data.lastLifecycleEventId is string
         && request.resource.data.lastLifecycleEventId.size() >= 10
         && request.resource.data.updatedAt is string

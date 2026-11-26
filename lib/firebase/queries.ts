@@ -7,6 +7,7 @@ import type { PortalIdentity } from "./auth";
 import type {
   MemberRecord, MovementRecord, RequestRecord, EconomicSettingsRecord, UserRecord,
 } from "./models";
+import type { Enrollment } from "./registration";
 
 function listWithIds<T extends DocumentData>(
   collectionName: string,
@@ -70,10 +71,17 @@ export async function readEconomicSettings(identity: PortalIdentity) {
   return snapshot.exists() ? (snapshot.data() as EconomicSettingsRecord) : null;
 }
 
-/** User accounts are visible to Presidency only. Provisioning remains server-only. */
 export async function readUserDirectory(identity: PortalIdentity) {
   if (!["secretaria","presidencia"].includes(identity.user.role)) {
     throw new Error("Solo Secretaría y Presidencia pueden consultar las cuentas.");
   }
+
   return listWithIds<UserRecord>("usuarios");
+}
+
+export async function readEnrollments(identity: PortalIdentity) {
+  if (!["secretaria", "presidencia"].includes(identity.user.role)) {
+    throw new Error("Solo Secretaría y Presidencia pueden consultar autorizaciones.");
+  }
+  return listWithIds<Enrollment>("preautorizaciones");
 }

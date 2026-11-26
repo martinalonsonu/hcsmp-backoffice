@@ -15,3 +15,11 @@ export async function updateAccountAccess(identity:PortalIdentity,uid:string,
   await updateDoc(doc(db,"usuarios",uid),{...changes,updatedAt:new Date().toISOString().slice(0,10),
     updatedAtServer:serverTimestamp()});
 }
+
+export async function updatePendingAccess(identity: PortalIdentity, email: string,
+  changes: {role?: UserRecord["role"]; activo?: boolean}) {
+  if (identity.user.role !== "secretaria") throw new Error("Solo Secretaría administra accesos.");
+  if (changes.role === undefined && changes.activo === undefined) return;
+  const {db} = getFirebaseServices();
+  await updateDoc(doc(db, "preautorizaciones", email), changes);
+}
