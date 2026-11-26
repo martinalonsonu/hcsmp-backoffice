@@ -11,6 +11,9 @@ verifica el correo y elige su contraseña. No se guardan contraseñas en Firesto
    `NEXT_PUBLIC_FIREBASE_APP_ID`. `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` y
    `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` son opcionales para este flujo.
    `NEXT_PUBLIC_FIREBASE_LOGIN_DOMAIN` ya no se usa.
+   Para desplegar en GitHub Pages, registrar esos mismos valores como variables
+   de repositorio en **Settings → Secrets and variables → Actions → Variables**.
+   El workflow valida las cuatro variables requeridas antes de compilar.
 2. En Firebase Authentication, habilitar **Correo/contraseña** y **Enlace de
    correo electrónico**. Añadir el dominio del portal a los dominios autorizados;
    añadir `localhost` para pruebas locales si hace falta.
