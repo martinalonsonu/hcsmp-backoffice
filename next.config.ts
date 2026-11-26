@@ -10,20 +10,32 @@ const legacyViews: Record<string, string> = {
   profile: "/perfil",
 };
 
+const isPagesExport = process.env.NEXT_OUTPUT === "export";
+
 const nextConfig: NextConfig = {
-  /* config options here */
+  ...(isPagesExport ? {
+    output: "export" as const,
+    basePath: "",
+    images: { unoptimized: true },
+  } : {}),
+  ...(!isPagesExport ? {
+    async redirects() {
+      return Object.entries(legacyViews).map(([view, destination]) => ({
+        source: "/dashboard",
+        has: [{ type: "query" as const, key: "view", value: view }],
+        destination,
+        permanent: false,
+      }));
+    },
+  } : {}),
+  ...(!isPagesExport ? {
+    cacheComponents: true,
+    partialPrefetching: true,
+  } : {
+    cacheComponents: false,
+  }),
   experimental: {
     agentFeedback: true,
-  },
-  cacheComponents: true,
-  partialPrefetching: true,
-  async redirects() {
-    return Object.entries(legacyViews).map(([view, destination]) => ({
-      source: "/dashboard",
-      has: [{ type: "query" as const, key: "view", value: view }],
-      destination,
-      permanent: false,
-    }));
   },
 };
 
