@@ -115,14 +115,14 @@ service cloud.firestore {
           'occupation', 'maritalStatus', 'joinedAt', 'swornAt', 'category',
           'status', 'sacraments', 'photoUrl', 'guardian', 'retiredAt',
           'rejoinedAt', 'createdAt', 'updatedAt', 'createdAtServer',
-          'updatedAtServer', 'createdBy', 'sex', 'hasChildren', 'rosterIndex'
+          'updatedAtServer', 'createdBy', 'sex', 'hasChildren', 'nonResidentHuacho', 'rosterIndex'
         ])
         && request.resource.data.keys().hasAll([
           'fullName', 'dni', 'birthDate', 'address', 'phone', 'email',
           'occupation', 'maritalStatus', 'joinedAt', 'swornAt', 'category',
           'status', 'sacraments', 'photoUrl', 'guardian', 'retiredAt',
           'rejoinedAt', 'createdAt', 'updatedAt', 'createdAtServer',
-          'updatedAtServer', 'createdBy', 'rosterIndex'
+          'updatedAtServer', 'createdBy', 'nonResidentHuacho', 'rosterIndex'
         ])
         && validRosterIndex()
         && request.resource.data.fullName is string
@@ -134,6 +134,7 @@ service cloud.firestore {
         && request.resource.data.birthDate is string
         && (!('sex' in request.resource.data) || request.resource.data.sex == null || request.resource.data.sex in ['varon', 'dama'])
         && (!('hasChildren' in request.resource.data) || request.resource.data.hasChildren == null || request.resource.data.hasChildren is bool)
+        && request.resource.data.nonResidentHuacho is bool
         && request.resource.data.address is string
         && request.resource.data.address.size() <= 300
         && request.resource.data.phone is string
@@ -195,11 +196,12 @@ service cloud.firestore {
       allow update: if rosterReader()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'address', 'phone', 'email', 'occupation', 'maritalStatus',
-          'sacraments', 'guardian', 'sex', 'hasChildren', 'rosterIndex', 'updatedAt', 'updatedAtServer'
+          'sacraments', 'guardian', 'sex', 'hasChildren', 'nonResidentHuacho', 'rosterIndex', 'updatedAt', 'updatedAtServer'
         ])
         && validRosterIndex()
         && (!('sex' in request.resource.data) || request.resource.data.sex == null || request.resource.data.sex in ['varon', 'dama'])
         && (!('hasChildren' in request.resource.data) || request.resource.data.hasChildren == null || request.resource.data.hasChildren is bool)
+        && (!('nonResidentHuacho' in request.resource.data) || request.resource.data.nonResidentHuacho is bool)
         && request.resource.data.address is string
         && request.resource.data.address.size() <= 300
         && request.resource.data.phone is string

@@ -26,6 +26,11 @@ Los enlaces antiguos `/dashboard?view=…` redirigen a la ruta de cada módulo.
 Configura las variables públicas del SDK y Firebase Authentication siguiendo
 [la guía de acceso](docs/firebase-auth-setup.md).
 
+En el padrón Firebase, `components/dashboard/views/members-view.tsx` presenta
+la interfaz; `hooks/use-roster.ts` gestiona filtros, paginación y exportación, y
+`hooks/use-member-management.ts` gestiona los formularios y operaciones de
+hermanos. Las reglas y consultas permanecen en `lib/`.
+
 ## Acceso
 
 Secretaría registra al hermano, su correo y su perfil. El hermano activa su

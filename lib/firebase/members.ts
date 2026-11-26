@@ -5,15 +5,17 @@ import type { MemberRecord, UserRecord } from "./models";
 import { normalizeEmail, type Enrollment } from "./registration.ts";
 import { makeRosterIndex } from "../roster-index.ts";
 
-type MemberInput = Pick<MemberRecord, "fullName" | "dni" | "birthDate" | "sex" | "hasChildren" | "address" | "phone" | "email" | "occupation" | "maritalStatus" | "joinedAt" | "swornAt" | "category" | "sacraments" | "guardian">;
-type ContactInput = Pick<MemberRecord, "address" | "phone" | "email" | "occupation" | "maritalStatus" | "sex" | "hasChildren" | "sacraments" | "guardian">;
+type MemberInput = Pick<MemberRecord, "fullName" | "dni" | "birthDate" | "sex" | "hasChildren" | "nonResidentHuacho" | "address" | "phone" | "email" | "occupation" | "maritalStatus" | "joinedAt" | "swornAt" | "category" | "sacraments" | "guardian">;
+type ContactInput = Pick<MemberRecord, "address" | "phone" | "email" | "occupation" | "maritalStatus" | "sex" | "hasChildren" | "nonResidentHuacho" | "sacraments" | "guardian">;
 const date = () => new Date().toISOString().slice(0, 10);
 
-function validateFamilyFields(input: Pick<MemberRecord, "sex" | "hasChildren">) {
+function validateFamilyFields(input: Pick<MemberRecord, "sex" | "hasChildren" | "nonResidentHuacho">) {
   if (input.sex != null && input.sex !== "varon" && input.sex !== "dama")
     throw new Error("Selecciona un sexo válido.");
   if (input.hasChildren != null && typeof input.hasChildren !== "boolean")
     throw new Error("Indica si el hermano tiene hijos.");
+  if (input.nonResidentHuacho != null && typeof input.nonResidentHuacho !== "boolean")
+    throw new Error("Indica si el hermano se acoge a la condición de no residente en Huacho.");
 }
 
 function requireRosterManager(identity: PortalIdentity) {
@@ -43,7 +45,8 @@ export async function createInstitutionalMember(identity: PortalIdentity, input:
   const { db } = getFirebaseServices();
   const payload = {
     fullName, dni, birthDate: input.birthDate, sex: input.sex ?? null,
-    hasChildren: input.hasChildren ?? null, address: input.address.trim(),
+    hasChildren: input.hasChildren ?? null, nonResidentHuacho: input.nonResidentHuacho ?? false,
+    address: input.address.trim(),
     phone: input.phone.trim(), email, occupation: input.occupation.trim(),
     maritalStatus: input.maritalStatus.trim(), joinedAt: input.joinedAt,
     swornAt: input.swornAt, category: input.category, status: "vigente",
@@ -121,6 +124,7 @@ export async function updateInstitutionalMemberContact(identity: PortalIdentity,
       address: input.address.trim(), phone: input.phone.trim(), email,
       occupation: input.occupation.trim(), maritalStatus: input.maritalStatus.trim(),
       sex: input.sex ?? null, hasChildren: input.hasChildren ?? null,
+      nonResidentHuacho: input.nonResidentHuacho ?? false,
       sacraments: input.sacraments, guardian: input.guardian,
       rosterIndex: makeRosterIndex({ ...current, ...input }),
       updatedAt: date(), updatedAtServer: serverTimestamp(),

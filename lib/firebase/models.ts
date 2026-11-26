@@ -22,6 +22,7 @@ export interface MemberRecord {
   birthDate: string;
   sex?: MemberSex | null;
   hasChildren?: boolean | null;
+  nonResidentHuacho?: boolean;
   rosterIndex?: ReturnType<typeof makeRosterIndex>;
   address: string;
   phone: string;

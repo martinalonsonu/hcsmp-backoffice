@@ -797,33 +797,12 @@ function MemberRegistration({ onClose }: { onClose: () => void }) {
                         },
                         "Podrá ingresar con su usuario aunque no tenga correo.",
                       )}
-                      {input("occupation", "Profesión u ocupación", {
-                        maxLength: 100,
+                      {input("occupation", "Profesión u ocupación (opcional)", {
+                        maxLength: 150,
                       })}
-                      <Field
-                        id="registration-maritalStatus"
-                        label="Estado civil"
-                      >
-                        <select
-                          id="registration-maritalStatus"
-                          className={selectClass}
-                          value={draft.maritalStatus}
-                          onChange={(event) =>
-                            update("maritalStatus", event.target.value)
-                          }
-                        >
-                          <option value="">Seleccionar</option>
-                          {[
-                            "Soltero/a",
-                            "Casado/a",
-                            "Viudo/a",
-                            "Divorciado/a",
-                            "Conviviente",
-                          ].map((option) => (
-                            <option key={option}>{option}</option>
-                          ))}
-                        </select>
-                      </Field>
+                      {input("maritalStatus", "Estado civil (opcional)", {
+                        maxLength: 80,
+                      })}
                       <Sacraments
                         value={draft.sacraments}
                         onChange={(value) => update("sacraments", value)}
