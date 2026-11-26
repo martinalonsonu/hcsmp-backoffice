@@ -21,6 +21,48 @@ vigentes y retirados. Firestore aplica los filtros antes de recuperar cada
 página de 10; el PDF consulta todos los resultados filtrados y se genera
 localmente en el navegador. Los recuentos se consultan mediante agregaciones.
 
+### Importar el padrón desde Excel
+
+Secretaría puede cargar libros `.xlsx` desde el padrón. El proceso lee todas las
+hojas no vacías; cada una debe contener los encabezados del padrón. Revisa las
+filas y las coincidencias por nombre y fecha de nacimiento antes de confirmar.
+Las filas con errores se excluyen y se muestran para corregirlas en el Excel.
+Si una hoja no tiene los encabezados esperados, se detiene la lectura para no
+omitir registros. El libro se procesa en el navegador; al confirmar, solo las
+fichas seleccionadas se escriben directamente en Firestore.
+
+`ESTATUS` se interpreta como categoría (`activo`, `pasivo`/`vitalicio`,
+`aspirante`/`postulante` o `reingresante`); las fichas creadas quedan vigentes.
+`ACTIVO - NO RESIDENTE EN HUACHO` mantiene la categoría Activo y marca la
+condición de no residente. Las demás fichas se consideran residentes en Huacho
+por defecto; Secretaría puede cambiar esta opción desde la ficha.
+Un aspirante sin fecha de juramentación es normal y se muestra como «Aún no
+juramentó». `V` y `D`
+indican varón y dama. En la columna `MADRE`, los valores `MADRE` o `PADRE`
+indican que tiene hijos e infieren el género solo si el campo está vacío.
+`NO`, vacío o `-` indican que no tiene hijos y no infieren el género. Las fechas
+de juramentación vacías o con `-` se tratan como ausentes. Si la categoría no
+es postulante, se señala como posible aspirante para revisión sin cambiarla.
+Se aceptan fechas con barras o guiones, con día y mes de uno o dos dígitos
+(por ejemplo, `28-3-2025`). Las fechas ambiguas se interpretan día/mes/año;
+cuando una parte supera 12, se infiere el orden a partir de ese valor. Los
+datos del apoderado se guardan en
+la ficha solo cuando hay nombre. El `DNI` que aparece bajo `APODERADO` se asigna
+al apoderado, no al hermano. Cuando falta el DNI del hermano, la importación
+busca posibles coincidencias por nombre y fecha de nacimiento y las excluye
+inicialmente; Secretaría debe revisarlas manualmente. El identificador de una
+ficha sin DNI es estable para que volver a importar el mismo nombre y fecha no
+la sobrescriba ni genere otra ficha. No sustituye una identificación
+institucional: agregar el DNI del hermano posteriormente requiere un flujo de
+regularización.
+
+El tiempo en la hermandad se calcula desde la fecha de juramentación y no se
+guarda como campo independiente. Las columnas `TIENE FICHA` y `TIENE FOTO` son
+indicadores; no se importan. La importación no crea usuarios, autorizaciones ni
+credenciales. Estado civil y profesión/ocupación son datos de texto opcionales.
+Antes de una carga en producción, Secretaría debe revisar las coincidencias y
+mantener una copia de respaldo del padrón.
+
 Antes de habilitar esta versión, desplegar las reglas y los índices de
 `firestore.rules` y `firestore.indexes.json`, y esperar a que los índices
 estén listos. Antes de habilitar el portal, un administrador ejecuta una sola

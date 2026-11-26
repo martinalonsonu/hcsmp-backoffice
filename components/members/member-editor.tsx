@@ -279,32 +279,20 @@ function MemberEditor({
             />
           </label>
           <label className="grid gap-2 text-sm">
-            Profesión u ocupación
+            Profesión u ocupación (opcional)
             <Input
+              maxLength={150}
               value={draft.occupation}
               onChange={(event) => patch("occupation", event.target.value)}
             />
           </label>
           <label className="grid gap-2 text-sm">
-            Estado civil
-            <select
-              className={selectClass}
+            Estado civil (opcional)
+            <Input
+              maxLength={80}
               value={draft.maritalStatus}
               onChange={(event) => patch("maritalStatus", event.target.value)}
-            >
-              <option value="">Sin especificar</option>
-              {[
-                "Soltero/a",
-                "Casado/a",
-                "Conviviente",
-                "Divorciado/a",
-                "Viudo/a",
-              ].map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+            />
           </label>
         </div>
         <div className="mt-4">

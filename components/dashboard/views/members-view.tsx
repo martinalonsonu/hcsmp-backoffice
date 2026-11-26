@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
-  ArrowLeftRight, FileDown, LoaderCircle, Pencil, RotateCcw, Search, SlidersHorizontal, UserMinus, UserPlus, UsersRound, X,
+  ArrowLeftRight, FileDown, FileSpreadsheet, LoaderCircle, Pencil, RotateCcw, Search, SlidersHorizontal, UserMinus, UserPlus, UsersRound, X,
 } from "lucide-react";
 import { ActionIcon } from "@/components/dashboard/action-icon";
 import { useLoadedPortal, type MemberRow } from "@/components/dashboard/portal-session";
+import { MemberRosterImport } from "@/components/members/member-roster-import";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,104 +18,33 @@ import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import {
-  categoryLabels, isTrialCategory, roleLabels, statusLabels, type Category, type Guardian, type Role,
+  categoryLabels, isTrialCategory, roleLabels, statusLabels, type Category, type Role,
 } from "@/lib/portal";
 import {
-  birthMonths, describeRosterFilters, hasSacrament, rosterSacraments, type MemberSex, type RosterFilters,
+  birthMonths, hasSacrament, rosterSacraments, type MemberSex, type RosterFilters,
 } from "@/lib/member-roster";
-import {
-  changeMemberCategory, changeMemberLifecycle, createInstitutionalMember, updateInstitutionalMemberContact,
-} from "@/lib/firebase/members";
-import { readFilteredRoster, readRosterPage, type RosterPage } from "@/lib/firebase/roster";
+import { emptyRosterFilters, useRoster } from "@/hooks/use-roster";
+import { useMemberManagement } from "@/hooks/use-member-management";
 
-const emptyRosterFilters: RosterFilters = { search:"", sex:"", parent:"", ageGroup:"", category:"", birthMonth:"", sacrament:"" };
 const checkOptionClass = "inline-flex min-h-11 cursor-pointer items-center gap-2.5 rounded-sm border border-line bg-white-warm px-3.5 text-sm transition-colors hover:bg-paper has-[:checked]:border-clay has-[:checked]:bg-paper";
-const emptyDraft = {
-  fullName:"", dni:"", birthDate:"", sex:null as MemberSex | null, hasChildren:null as boolean | null, address:"", phone:"", email:"",
-  occupation:"", maritalStatus:"", joinedAt:"", swornAt:"",
-  category:"activo" as Category, sacraments:[] as string[], guardian:null as Guardian | null,
-};
-
 export function MembersView() {
-  const { data, identity, role, reload } = useLoadedPortal();
-  const [draftFilters, setDraftFilters] = useState<RosterFilters>(emptyRosterFilters);
-  const [rosterFilters, setRosterFilters] = useState<RosterFilters>(emptyRosterFilters);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [rosterPage, setRosterPage] = useState(1);
-  const [rosterCursors, setRosterCursors] = useState<Array<RosterPage["last"]>>([null]);
-  const [rosterResult, setRosterResult] = useState<RosterPage | null>(null);
-  const [rosterError, setRosterError] = useState("");
-  const [rosterDownloadBusy, setRosterDownloadBusy] = useState(false);
-  const [rosterDownloadError, setRosterDownloadError] = useState("");
-  const rosterDownloadLock = useRef(false);
-  const [memberBusy, setMemberBusy] = useState(false);
-  const [categoryTarget, setCategoryTarget] = useState<MemberRow | null>(null);
-  const [categoryOpen, setCategoryOpen] = useState(false);
-  const [lifecycleTarget, setLifecycleTarget] = useState<MemberRow | null>(null);
-  const [lifecycleOpen, setLifecycleOpen] = useState(false);
-  const [lifecycleReason, setLifecycleReason] = useState("");
-  const [nextCategory, setNextCategory] = useState<Category>("activo");
-  const [categoryReason, setCategoryReason] = useState("");
-  const [memberMessage, setMemberMessage] = useState("");
-  const [memberFormOpen, setMemberFormOpen] = useState(false);
-  const [newMemberRole, setNewMemberRole] = useState<Role>("estandar");
-  const [editingMember, setEditingMember] = useState<MemberRow | null>(null);
-  const [memberDraft, setMemberDraft] = useState(emptyDraft);
-
-  const coverage = data.rosterCoverage;
-  const coverageReady = coverage !== null && coverage.indexed === coverage.total;
-
-  // Solo los filtros aplicados (botón Buscar) y la paginación consultan Firestore.
-  useEffect(() => {
-    if (!coverageReady) return;
-    let active = true;
-    void readRosterPage(identity, rosterFilters, rosterCursors[rosterPage - 1] ?? null)
-      .then((result) => { if (active) setRosterResult(result); })
-      .catch((cause) => { if (active) setRosterError(cause instanceof Error ? cause.message : "No se pudo consultar el padrón."); });
-    return () => { active = false; };
-  }, [identity, data, coverageReady, rosterFilters, rosterCursors, rosterPage]);
-
-  const pageCount = Math.max(1, Math.ceil((rosterResult?.count ?? 0) / 10));
-  const pageMembers = rosterResult?.members ?? [];
-  const appliedChips = describeRosterFilters(rosterFilters);
-  const draftEmpty = Object.values(draftFilters).every((value) => !value);
-  const searching = coverageReady && !rosterResult && !rosterError;
-
-  function openFilters() {
-    setDraftFilters({...rosterFilters});
-    setFiltersOpen(true);
-  }
-
-  function setDraftFilter<K extends keyof RosterFilters>(key: K, value: RosterFilters[K]) {
-    setDraftFilters((current) => ({...current, [key]:value}));
-  }
-
-  function resetResults() {
-    setRosterPage(1);
-    setRosterCursors([null]);
-    setRosterResult(null);
-    setRosterError("");
-  }
-
-  function applyFilters(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (searching) return;
-    resetResults();
-    setRosterFilters({...draftFilters});
-    setFiltersOpen(false);
-  }
-
-  function removeFilter(key: keyof RosterFilters) {
-    if (searching) return;
-    resetResults();
-    setRosterFilters((current) => ({...current, [key]:""}));
-  }
-
-  function clearAppliedFilters() {
-    if (searching) return;
-    resetResults();
-    setRosterFilters({...emptyRosterFilters});
-  }
+  const { role, reload } = useLoadedPortal();
+  const [importOpen, setImportOpen] = useState(false);
+  const {
+    draftFilters, setDraftFilters, filtersOpen, setFiltersOpen, rosterPage,
+    rosterResult, rosterError, rosterDownloadBusy, rosterDownloadError,
+    coverage, coverageReady, pageCount, pageMembers, appliedChips, draftEmpty,
+    searching, openFilters, setDraftFilter, applyFilters, removeFilter,
+    clearAppliedFilters, previousPage, nextPage, exportRoster,
+  } = useRoster();
+  const {
+    memberBusy, categoryTarget, categoryOpen, setCategoryOpen, lifecycleTarget,
+    lifecycleOpen, setLifecycleOpen, lifecycleReason, setLifecycleReason,
+    nextCategory, setNextCategory, categoryReason, setCategoryReason, memberMessage,
+    memberFormOpen, setMemberFormOpen, newMemberRole, setNewMemberRole,
+    editingMember, memberDraft, setMemberDraft, saveMember, submitCategoryChange,
+    submitLifecycleChange, openMember, openCategory, openLifecycle,
+  } = useMemberManagement();
 
   function renderMemberActions(member: MemberRow) {
     return <>
@@ -123,99 +53,15 @@ export function MembersView() {
       </ActionIcon>
       {role === "secretaria" && member.status === "vigente" && <ActionIcon
         label={`Cambiar categoría de ${member.fullName}`}
-        onClick={() => { setCategoryTarget(member); setCategoryOpen(true); setNextCategory(member.category); setCategoryReason(""); setMemberMessage(""); }}>
+        onClick={() => openCategory(member)}>
         <ArrowLeftRight className="size-4"/>
       </ActionIcon>}
       {role === "secretaria" && <ActionIcon
         label={`${member.status === "vigente" ? "Registrar retiro" : "Registrar reingreso"} de ${member.fullName}`}
-        onClick={() => { setLifecycleTarget(member); setLifecycleOpen(true); setLifecycleReason(""); setMemberMessage(""); }}>
+        onClick={() => openLifecycle(member)}>
         {member.status === "vigente" ? <UserMinus className="size-4"/> : <UserPlus className="size-4"/>}
       </ActionIcon>}
     </>;
-  }
-
-  async function exportRoster() {
-    if (rosterDownloadLock.current || !rosterResult?.count) return;
-    rosterDownloadLock.current = true;
-    setRosterDownloadBusy(true);
-    setRosterDownloadError("");
-    try {
-      const { downloadMemberRoster } = await import("@/lib/member-document");
-      const members = await readFilteredRoster(identity, rosterFilters);
-      await downloadMemberRoster(members, {
-        search: rosterFilters.search,
-        sex: rosterFilters.sex || undefined,
-        parent: rosterFilters.parent || undefined,
-        ageGroup: rosterFilters.ageGroup || undefined,
-        category: rosterFilters.category || undefined,
-        birthMonth: rosterFilters.birthMonth || undefined,
-        sacrament: rosterFilters.sacrament || undefined,
-      });
-    } catch (cause) {
-      setRosterDownloadError(cause instanceof Error ? cause.message : "No se pudo exportar el padrón.");
-    } finally {
-      rosterDownloadLock.current = false;
-      setRosterDownloadBusy(false);
-    }
-  }
-
-  async function saveMember(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (memberBusy) return;
-    setMemberBusy(true); setMemberMessage("");
-    try {
-      if (editingMember) {
-        await updateInstitutionalMemberContact(identity, editingMember.id, memberDraft);
-      } else {
-        await createInstitutionalMember(identity, memberDraft, newMemberRole);
-      }
-      setMemberFormOpen(false);
-      reload();
-    } catch (cause) {
-      setMemberMessage(cause instanceof Error ? cause.message : "No se pudo guardar la ficha.");
-    } finally { setMemberBusy(false); }
-  }
-
-  async function submitCategoryChange(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!categoryTarget || memberBusy) return;
-    setMemberBusy(true); setMemberMessage("");
-    try {
-      await changeMemberCategory(identity, categoryTarget.id, nextCategory, categoryReason);
-      setCategoryOpen(false); setCategoryReason("");
-      reload();
-    } catch (cause) {
-      setMemberMessage(cause instanceof Error ? cause.message : "No se pudo cambiar la categoría.");
-    } finally { setMemberBusy(false); }
-  }
-
-  async function submitLifecycleChange(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!lifecycleTarget || memberBusy) return;
-    setMemberBusy(true); setMemberMessage("");
-    try {
-      await changeMemberLifecycle(identity, lifecycleTarget.id,
-        lifecycleTarget.status === "vigente" ? "retiro" : "reingreso", lifecycleReason);
-      setLifecycleOpen(false); setLifecycleReason("");
-      reload();
-    } catch (cause) {
-      setMemberMessage(cause instanceof Error ? cause.message : "No se pudo registrar el cambio de estado.");
-    } finally { setMemberBusy(false); }
-  }
-
-  function openMember(member: MemberRow | null) {
-    setEditingMember(member);
-    setMemberMessage("");
-    setNewMemberRole("estandar");
-    setMemberDraft(member ? {
-      fullName:member.fullName, dni:member.dni ?? "", birthDate:member.birthDate ?? "",
-      sex:member.sex ?? null, hasChildren:member.hasChildren ?? null,
-      address:member.address ?? "", phone:member.phone ?? "", email:member.email ?? "",
-      occupation:member.occupation ?? "", maritalStatus:member.maritalStatus ?? "",
-      joinedAt:member.joinedAt ?? "", swornAt:member.swornAt ?? "",
-      category:member.category, sacraments:member.sacraments ?? [], guardian:member.guardian ?? null,
-    } : emptyDraft);
-    setMemberFormOpen(true);
   }
 
   return (
@@ -231,6 +77,10 @@ export function MembersView() {
           </Button>
           {role === "secretaria" && <Button className="flex-1 px-4 sm:flex-none sm:px-5" onClick={() => openMember(null)}>
             <UserPlus aria-hidden="true" className="size-4"/> Registrar hermano
+          </Button>}
+          {role === "secretaria" && <Button type="button" variant="outline" className="flex-1 px-4 sm:flex-none sm:px-5"
+            onClick={() => setImportOpen(true)}>
+            <FileSpreadsheet aria-hidden="true" className="size-4"/> Importar Excel
           </Button>}
         </div>} />
       {rosterDownloadError && <Alert variant="error">{rosterDownloadError}</Alert>}
@@ -268,7 +118,10 @@ export function MembersView() {
                 <span className="block font-medium text-ink">{member.fullName}</span>
                 <span className="mt-1 block text-xs text-muted">DNI {member.dni || "Sin registrar"}</span>
               </>},
-              {header:"Categoría", cell:(member) => <Badge variant={isTrialCategory(member.category) ? "muted" : "accent"}>{categoryLabels[member.category]}</Badge>},
+              {header:"Categoría", cell:(member) => <div>
+                <Badge variant={isTrialCategory(member.category) ? "muted" : "accent"}>{categoryLabels[member.category]}</Badge>
+                {member.nonResidentHuacho && <span className="mt-1 block text-xs text-muted">No residente en Huacho</span>}
+              </div>},
               {header:"Estado", cell:(member) => <Badge variant={member.status === "vigente" ? "success" : "muted"}>{statusLabels[member.status]}</Badge>},
               {header:"Acciones", kind:"actions", cell:(member) => renderMemberActions(member)},
             ]} /> : rosterResult && <EmptyState icon={UsersRound} title="No encontramos coincidencias"
@@ -279,10 +132,10 @@ export function MembersView() {
             </EmptyState>}
           {rosterResult && <nav aria-label="Paginación del padrón" className="flex flex-wrap items-center justify-between gap-3 text-sm">
             <Button type="button" variant="outline" size="sm" disabled={rosterPage === 1}
-              onClick={() => {setRosterResult(null); setRosterError(""); setRosterPage(rosterPage - 1);}}>Anterior</Button>
+              onClick={previousPage}>Anterior</Button>
             <span className="text-muted">Página <span className="font-medium text-ink">{rosterPage}</span> de <span className="font-medium text-ink">{pageCount}</span></span>
             <Button type="button" variant="outline" size="sm" disabled={!rosterResult.last || rosterPage >= pageCount}
-              onClick={() => {setRosterCursors((current) => [...current.slice(0, rosterPage), rosterResult.last]); setRosterResult(null); setRosterError(""); setRosterPage(rosterPage + 1);}}>Siguiente</Button>
+              onClick={nextPage}>Siguiente</Button>
           </nav>}
         </PanelBody>
       </Panel>
@@ -429,6 +282,15 @@ export function MembersView() {
                   <option value="">Sin registrar</option><option value="si">Sí</option><option value="no">No</option>
                 </Select>
               </Field>
+              <label className={`${checkOptionClass} sm:col-span-2`}>
+                <input type="checkbox" className="size-4 accent-clay"
+                  checked={memberDraft.nonResidentHuacho ?? false}
+                  onChange={(event) => setMemberDraft((current) => ({...current,nonResidentHuacho:event.target.checked}))}/>
+                <span>
+                  Se acoge a la condición de no residente en Huacho
+                  <span className="block text-xs text-muted">Por defecto, se considera residente en Huacho.</span>
+                </span>
+              </label>
               <Field label="Categoría">
                 <Select disabled={!!editingMember} value={memberDraft.category}
                   onChange={(event) => setMemberDraft((current) => ({...current,category:event.target.value as Category}))}>
@@ -506,6 +368,8 @@ export function MembersView() {
         </Panel>
         {memberMessage && <Alert variant="error">{memberMessage}</Alert>}
       </Modal>
+      {role === "secretaria" && <MemberRosterImport open={importOpen} coverageReady={coverageReady}
+        onClose={() => setImportOpen(false)} onImported={reload}/>}
     </>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { useRef, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { CircleHelp, LogOut, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
@@ -12,6 +12,15 @@ import { useAnimatedDialog } from "@/components/ui/use-animated-dialog";
 import { categoryLabels, roleLabels } from "@/lib/portal";
 import { routeForPath, routesForRole, type PortalRoute } from "@/lib/portal-routes";
 import { cn } from "@/lib/utils";
+
+function NavigationPendingHint({ compact = false }: { compact?: boolean }) {
+  const { pending } = useLinkStatus();
+  return <span aria-hidden="true" className={cn(
+    "ml-auto size-1.5 shrink-0 rounded-full bg-clay transition-opacity delay-100 duration-150",
+    pending ? "opacity-100" : "opacity-0",
+    compact && "hidden",
+  )}/>;
+}
 
 function PortalFrame({ children }: { children: ReactNode }) {
   const { identity, data, loading, error, signOut } = usePortalSession();
@@ -42,6 +51,7 @@ function PortalFrame({ children }: { children: ReactNode }) {
         )}>
         <Icon aria-hidden="true" className="size-5 shrink-0" strokeWidth={1.8} />
         <span className={cn("truncate transition-[max-width,opacity] duration-300", compact ? "max-w-0 opacity-0" : "max-w-44 opacity-100")}>{route.label}</span>
+        <NavigationPendingHint compact={compact}/>
       </Link>
     );
   };
